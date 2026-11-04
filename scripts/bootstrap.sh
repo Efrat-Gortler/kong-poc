@@ -67,9 +67,15 @@ log "4/5 secrets and Konnect"
 if [[ -n "${KONNECT_TOKEN:-}" ]]; then
   for leg in $(legs); do "$REPO_ROOT/scripts/konnect-setup.sh" "$leg"; done
   if ! git -C "$REPO_ROOT" diff --quiet -- charts/kong-values; then
-    warn "charts/kong-values/values-<leg>.yaml changed (Konnect IDs). Commit and push them before ArgoCD syncs Kong:"
-    warn "  git add charts/kong-values && git commit -m 'Konnect control plane IDs' && git push"
+    # ArgoCD must see the real control plane IDs before it installs Kong.
+    git -C "$REPO_ROOT" --no-pager diff --stat -- charts/kong-values
+    confirm "Commit and push the Konnect control plane IDs (not secret) now?" \
+      || die "push them yourself, then re-run: git add charts/kong-values && git commit -m 'Konnect control plane IDs' && git push"
+    git -C "$REPO_ROOT" add charts/kong-values
+    git -C "$REPO_ROOT" commit -q -m "Konnect control plane IDs"
+    git -C "$REPO_ROOT" push -q
   fi
+  grep -q KONNECT_CP_ID_ "$REPO_ROOT"/charts/kong-values/values-*.yaml && die "a leg still has a KONNECT_CP_ID placeholder"
 else
   warn "KONNECT_TOKEN not set: skipped Konnect. Kong will run without Enterprise plugins until it is done."
 fi

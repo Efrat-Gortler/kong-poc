@@ -21,6 +21,16 @@ Each item: what the POC assumed, and what must be checked.
 - [ ] Execution order of the two rate-limit plugins (same priority 910) — the POC forces per-user first with
       Enterprise dynamic ordering; confirm this is wanted and supported in the chosen version.
 
+## To confirm on the running POC (Phase 3–8)
+- [ ] `kong.client.get_credential().id` equals the `caller_id` value when openid-connect uses `credential_claim`
+      (the Lua plugin and the access log rely on it). Test 8 "user" fails if not.
+- [ ] Redis key format of `rate-limiting-advanced` contains the namespace in clear text
+      (the tests reset counters with `--scan --pattern '*<route>-user*'`).
+- [ ] `opa run --watch` together with a configured bundle (policy hot-reload).
+- [ ] Exact Kong Gateway patch tag `3.14.0.x` on Docker Hub.
+- [ ] Konnect KIC hostname for the EU region (`eu.kic.api.konghq.com` assumed; checked by konnect-setup.sh).
+- [ ] NuGet package versions for .NET 10 (`Swashbuckle.AspNetCore 9.0.1` etc.) — the in-cluster build is the check.
+
 ## Kong / OpenShift
 - [ ] OpenShift version of the production clusters ≥ 4.19 (Gateway API CRDs managed by the platform) and which
       Gateway API version they ship; KIC 3.5 compatibility with it.
