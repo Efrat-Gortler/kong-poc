@@ -1,0 +1,36 @@
+# Code shipped as ConfigMaps into every leg: the Lua plugin and the Rego policy.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legs-code
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/khibye/kong-poc.git
+              revision: main
+              files:
+                - path: environments/*.yaml
+          - list:
+              elements:
+                - { app: kong-plugin-blocklist, path: kong-plugins/blocklist }
+                - { app: opa-policy,            path: opa/policy }
+  template:
+    metadata:
+      name: '{{ .leg }}-{{ .app }}'
+      labels: { kong-poc/leg: '{{ .leg }}', kong-poc/app: '{{ .app }}' }
+    spec:
+      project: kong-poc
+      source:
+        repoURL: https://github.com/khibye/kong-poc.git
+        targetRevision: main
+        path: '{{ .path }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .leg }}'
+      syncPolicy:
+        automated: { prune: true, selfHeal: true }

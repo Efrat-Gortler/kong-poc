@@ -76,10 +76,8 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        {{- range .Values.allowFromNamespaces }}
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ . }}
-        {{- end }}
+              {{- toYaml .Values.legNamespaceLabel | nindent 14 }}
       ports:
         - { port: 6379, protocol: TCP }

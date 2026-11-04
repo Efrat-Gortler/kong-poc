@@ -37,5 +37,6 @@ postgres:
     requests: { cpu: 50m, memory: 96Mi }
     limits: { memory: 384Mi }
 
-# Who may call the service: the legs (Lua plugin, OPA), the router (Swagger route)
-allowFromNamespaces: [leg1, leg2]
+# Who may call the service: every leg (Lua plugin, OPA) and the router (Swagger route)
+legNamespaceLabel:
+  kong-poc/role: leg

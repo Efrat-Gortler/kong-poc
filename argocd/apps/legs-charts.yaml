@@ -1,0 +1,54 @@
+# Our own per-leg Helm charts, for every leg (environments/*.yaml) x every app below.
+# Value files, in order (missing ones are skipped):
+#   values.yaml, values-<app>.yaml, values-profile-<profile>.yaml, values-<leg>.yaml,
+#   ../../environments/<leg>.yaml   (the leg's global identity)
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legs-charts
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/khibye/kong-poc.git
+              revision: main
+              files:
+                - path: environments/*.yaml
+          - list:
+              elements:
+                - { app: kong-global, chart: kong-global }
+                - { app: opa,         chart: opa }
+                - { app: orders,      chart: mock-service }
+                - { app: reports,     chart: mock-service }
+                - { app: users,       chart: mock-service }
+  template:
+    metadata:
+      name: '{{ .leg }}-{{ .app }}'
+      labels: { kong-poc/leg: '{{ .leg }}', kong-poc/app: '{{ .app }}' }
+    spec:
+      project: kong-poc
+      source:
+        repoURL: https://github.com/khibye/kong-poc.git
+        targetRevision: main
+        path: 'charts/{{ .chart }}'
+        helm:
+          releaseName: '{{ .app }}'
+          ignoreMissingValueFiles: true
+          valueFiles:
+            - values.yaml
+            - 'values-{{ .app }}.yaml'
+            - 'values-profile-{{ .profile }}.yaml'
+            - 'values-{{ .leg }}.yaml'
+            - '../../environments/{{ .leg }}.yaml'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .leg }}'
+      syncPolicy:
+        automated: { prune: true, selfHeal: true }
+        retry:
+          limit: 10
+          backoff: { duration: 10s, factor: 2, maxDuration: 3m }

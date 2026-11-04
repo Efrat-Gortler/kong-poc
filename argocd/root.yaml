@@ -1,0 +1,20 @@
+# The only object applied by hand (scripts/bootstrap.sh). Everything else is
+# created by ArgoCD from argocd/apps in Git.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kong-poc-root
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/khibye/kong-poc.git
+    targetRevision: main
+    path: argocd/apps
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-gitops
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

@@ -1,0 +1,88 @@
+# Cluster-wide and shared components (one instance, not per leg).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kong-crds
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  project: kong-poc
+  source:
+    # Kong CRDs (KongPlugin, KongClusterPlugin, ...) matching KIC 3.5.14.
+    # Gateway API CRDs are NOT installed: OpenShift 4.19+ manages them itself.
+    repoURL: https://github.com/Kong/kubernetes-ingress-controller
+    targetRevision: v3.5.14
+    path: config/crd
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: { prune: false, selfHeal: true }
+    syncOptions: [ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis
+  namespace: openshift-gitops
+spec:
+  project: kong-poc
+  source:
+    repoURL: https://github.com/khibye/kong-poc.git
+    targetRevision: main
+    path: charts/redis
+  destination: { server: https://kubernetes.default.svc, namespace: gw-shared }
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: idp
+  namespace: openshift-gitops
+spec:
+  project: kong-poc
+  source:
+    repoURL: https://github.com/khibye/kong-poc.git
+    targetRevision: main
+    path: charts/idp
+  destination: { server: https://kubernetes.default.svc, namespace: idp }
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: blocking-service
+  namespace: openshift-gitops
+spec:
+  project: kong-poc
+  source:
+    repoURL: https://github.com/khibye/kong-poc.git
+    targetRevision: main
+    path: charts/blocking-service
+  destination: { server: https://kubernetes.default.svc, namespace: blocking }
+  # The image trigger rewrites the image field to the built digest.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: blocking-service
+      jqPathExpressions: [".spec.template.spec.containers[].image"]
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [RespectIgnoreDifferences=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gslb-sim
+  namespace: openshift-gitops
+spec:
+  project: kong-poc
+  source:
+    repoURL: https://github.com/khibye/kong-poc.git
+    targetRevision: main
+    path: charts/gslb-sim
+  destination: { server: https://kubernetes.default.svc, namespace: gslb-sim }
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

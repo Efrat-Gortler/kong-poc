@@ -27,10 +27,12 @@ controller:
       # EU org. Verified at install time by scripts/konnect-setup.sh (see RUNBOOK).
       apiHostname: "eu.kic.api.konghq.com"
       tlsClientCertSecretName: konnect-client-tls
+    # Off in the POC: the chart generates the webhook certificate at render time,
+    # so every ArgoCD sync would produce a new one (permanent drift, stale cert in
+    # the running controller). Invalid plugin configs still surface as KIC events
+    # and logs. Production: enable it with cert-manager (certificate.provided).
     admissionWebhook:
-      enabled: true
-      failurePolicy: Ignore
-      # namespaceSelector set per leg so leg1's webhook never judges leg2's objects
+      enabled: false
     resources:
       requests: { cpu: 100m, memory: 192Mi }
       limits: { memory: 384Mi }

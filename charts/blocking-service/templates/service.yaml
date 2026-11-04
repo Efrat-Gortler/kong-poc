@@ -109,11 +109,9 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        {{- range .Values.allowFromNamespaces }}
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ . }}
-        {{- end }}
+              {{- toYaml .Values.legNamespaceLabel | nindent 14 }}
         - namespaceSelector:     # OpenShift router (Swagger route)
             matchLabels:
               policy-group.network.openshift.io/ingress: ""

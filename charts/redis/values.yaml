@@ -6,5 +6,6 @@ maxMemory: 128mb
 resources:
   requests: { cpu: 50m, memory: 64Mi }
   limits: { memory: 192Mi }
-# Namespaces whose pods may connect (the legs).
-allowFromNamespaces: [leg1, leg2]
+# Pods in namespaces with this label may connect (every leg; set by scripts/bootstrap.sh).
+legNamespaceLabel:
+  kong-poc/role: leg

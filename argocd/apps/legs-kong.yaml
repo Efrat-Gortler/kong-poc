@@ -1,0 +1,45 @@
+# Kong itself in every leg: the official kong/ingress chart (pinned) + our values from Git.
+# One Application per file in environments/ -> adding environments/leg3.yaml adds a leg.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legs-kong
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/khibye/kong-poc.git
+        revision: main
+        files:
+          - path: environments/*.yaml
+  template:
+    metadata:
+      name: '{{ .leg }}-kong'
+      labels: { kong-poc/leg: '{{ .leg }}', kong-poc/app: kong }
+    spec:
+      project: kong-poc
+      sources:
+        - repoURL: https://charts.konghq.com
+          chart: ingress
+          targetRevision: 0.24.0
+          helm:
+            releaseName: 'kong-{{ .leg }}'
+            skipCrds: true            # CRDs come from the kong-crds app, once per cluster
+            valueFiles:
+              - $values/charts/kong-values/values.yaml
+              - '$values/charts/kong-values/values-profile-{{ .profile }}.yaml'
+              - '$values/charts/kong-values/values-{{ .leg }}.yaml'
+        - repoURL: https://github.com/khibye/kong-poc.git
+          targetRevision: main
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .leg }}'
+      syncPolicy:
+        automated: { prune: true, selfHeal: true }
+        syncOptions: [ServerSideApply=true]
+        retry:
+          limit: 10
+          backoff: { duration: 10s, factor: 2, maxDuration: 3m }

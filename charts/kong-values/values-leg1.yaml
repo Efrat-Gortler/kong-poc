@@ -8,10 +8,6 @@ controller:
       gateway_api_controller_name: konghq.com/kic-gateway-controller-leg1
     konnect:
       controlPlaneID: "KONNECT_CP_ID_LEG1"
-    admissionWebhook:
-      namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: leg1
 gateway:
   env:
     cluster_telemetry_endpoint: "KONNECT_TP_HOST_LEG1:443"

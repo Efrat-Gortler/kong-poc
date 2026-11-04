@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: kong-poc
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: Kong Enterprise POC (option C - Git + KIC + blocking service)
+  sourceRepos:
+    - https://github.com/khibye/kong-poc.git
+    - https://charts.konghq.com
+    - https://github.com/Kong/kubernetes-ingress-controller
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: "leg*" }
+    - { server: https://kubernetes.default.svc, namespace: gw-shared }
+    - { server: https://kubernetes.default.svc, namespace: idp }
+    - { server: https://kubernetes.default.svc, namespace: blocking }
+    - { server: https://kubernetes.default.svc, namespace: gslb-sim }
+  # GatewayClass, IngressClass, KongClusterPlugin, ClusterRoles, Kong CRDs
+  clusterResourceWhitelist:
+    - { group: "*", kind: "*" }
