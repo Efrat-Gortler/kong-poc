@@ -1,0 +1,16 @@
+# See leg1.yaml for the meaning of each key.
+leg: leg2
+profile: small
+global:
+  leg: leg2
+  kong:
+    ingressClass: kong-leg2
+    gatewayClassName: kong-leg2
+    gatewayName: kong
+    controllerName: konghq.com/kic-gateway-controller-leg2
+  redis:
+    host: kong-redis.leg2.svc.cluster.local
+    port: 6379
+    passwordSecret: redis-auth
+    routeLimitDatabase: 2
+    userLimitDatabase: 0

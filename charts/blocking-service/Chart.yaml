@@ -1,0 +1,6 @@
+apiVersion: v2
+name: blocking-service
+description: Central blocking service (C#, Swagger) + PostgreSQL. Built in-cluster from this repo by an OpenShift BuildConfig.
+type: application
+version: 0.1.0
+appVersion: "poc"

@@ -1,0 +1,38 @@
+# In-cluster image build from GitHub (the workstation needs no .NET SDK or registry).
+# Rebuild after a code change:  oc start-build blocking-service -n blocking --follow
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: blocking-service
+spec:
+  lookupPolicy:
+    local: true          # lets the Deployment use the short name blocking-service:<tag>
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: blocking-service
+spec:
+  runPolicy: Serial
+  source:
+    type: Git
+    git:
+      uri: {{ .Values.build.gitUri }}
+      ref: {{ .Values.build.gitRef }}
+    contextDir: {{ .Values.build.contextDir }}
+    {{- with .Values.build.sourceSecret }}
+    sourceSecret:
+      name: {{ . }}
+    {{- end }}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: blocking-service:{{ .Values.build.imageTag }}
+  resources:
+    limits: { memory: 2Gi }
+  triggers:
+    - type: ConfigChange

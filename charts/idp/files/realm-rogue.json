@@ -1,0 +1,20 @@
+{
+  "realm": "rogue",
+  "enabled": true,
+  "displayName": "Untrusted issuer (acceptance test 2: wrong issuer)",
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "clients": [
+    {
+      "clientId": "rogue-service",
+      "enabled": true, "publicClient": false, "secret": "${KC_SYSTEM_CLIENT_SECRET}",
+      "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        { "name": "caller_id", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": { "claim.name": "caller_id", "claim.value": "reports-service", "jsonType.label": "String", "access.token.claim": "true" } },
+        { "name": "aud-gateway", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api://kong-gateway", "access.token.claim": "true" } }
+      ]
+    }
+  ]
+}

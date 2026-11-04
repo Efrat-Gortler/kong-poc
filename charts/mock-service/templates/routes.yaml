@@ -1,0 +1,1 @@
+{{ include "kong-route-lib.routes" . }}

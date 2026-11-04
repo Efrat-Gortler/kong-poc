@@ -1,0 +1,96 @@
+# Values for the OFFICIAL chart kong/ingress (pinned in argocd/apps/legs-kong.yaml).
+# This directory is not a chart: ArgoCD uses it as a multi-source "$values" ref.
+# Layering: values.yaml -> values-profile-<profile>.yaml -> values-<leg>.yaml
+#
+# Cluster-scoped objects are per leg (ingress class, GatewayClass controller
+# name, admission webhook) because both POC legs share ONE cluster. In
+# production each leg is its own cluster and these can all be plain "kong".
+
+controller:
+  # OpenShift assigns UIDs through SCC; the chart's fixed runAsUser 1000 is rejected.
+  containerSecurityContext:
+    enabled: false
+  ingressController:
+    image:
+      repository: kong/kubernetes-ingress-controller
+      tag: "3.5.14"
+    env:
+      feature_gates: "FillIDs=true"
+      # set per leg in values-<leg>.yaml:
+      # gateway_api_controller_name: konghq.com/kic-gateway-controller-legN
+    # set per leg: ingressClass, watchNamespaces, konnect.controlPlaneID
+    createIngressClass: true
+    konnect:
+      enabled: true
+      license:
+        enabled: true
+      # EU org. Verified at install time by scripts/konnect-setup.sh (see RUNBOOK).
+      apiHostname: "eu.kic.api.konghq.com"
+      tlsClientCertSecretName: konnect-client-tls
+    admissionWebhook:
+      enabled: true
+      failurePolicy: Ignore
+      # namespaceSelector set per leg so leg1's webhook never judges leg2's objects
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { memory: 384Mi }
+
+gateway:
+  containerSecurityContext:
+    enabled: false
+  image:
+    repository: kong/kong-gateway
+    # 3.14 = current LTS (supported until 2029-04). Exact patch verified in Phase 3.
+    tag: "3.14.0.16"
+  env:
+    database: "off"
+    konnect_mode: "on"
+    vitals: "off"
+    cluster_mtls: pki
+    cluster_cert: /etc/secrets/konnect-client-tls/tls.crt
+    cluster_cert_key: /etc/secrets/konnect-client-tls/tls.key
+    lua_ssl_trusted_certificate: system
+    dns_stale_ttl: "3600"
+    # set per leg: cluster_telemetry_endpoint / cluster_telemetry_server_name
+    # nginx connection ceiling per pod = worker_processes x worker_connections
+    nginx_worker_processes: "2"
+    nginx_events_worker_connections: "4096"
+    # shared memory used by the custom blocklist plugin (list + poll lock)
+    nginx_http_lua_shared_dict: "blocklist 5m"
+    proxy_access_log: "off"        # access log comes from the file-log plugin (with caller_id/leg)
+  secretVolumes:
+    - konnect-client-tls
+  # Custom plugin, delivered as a ConfigMap (rendered from kong-plugins/blocklist).
+  # The chart mounts it at /opt/kong/plugins/blocklist and adds it to KONG_PLUGINS.
+  plugins:
+    configMaps:
+      - pluginName: blocklist
+        name: kong-plugin-blocklist
+  proxy:
+    type: ClusterIP
+    http:
+      enabled: true
+      servicePort: 80
+      containerPort: 8000
+    tls:
+      enabled: false
+  admin:
+    type: ClusterIP
+    clusterIP: None
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 70
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 2Gi }
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1

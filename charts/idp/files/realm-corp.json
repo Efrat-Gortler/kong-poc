@@ -1,0 +1,121 @@
+{
+  "realm": "corp",
+  "enabled": true,
+  "displayName": "corp (ADFS simulation)",
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "defaultSignatureAlgorithm": "RS256",
+  "roles": {
+    "realm": [
+      { "name": "blocker", "description": "May create and remove blocks in the blocking service" }
+    ]
+  },
+  "users": [
+    {
+      "username": "666efratg", "enabled": true, "emailVerified": true,
+      "firstName": "Efrat", "lastName": "G", "email": "666efratg@corp.local",
+      "credentials": [{ "type": "password", "value": "${KC_TEST_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "777danag", "enabled": true, "emailVerified": true,
+      "firstName": "Dana", "lastName": "G", "email": "777danag@corp.local",
+      "credentials": [{ "type": "password", "value": "${KC_TEST_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "normaluser", "enabled": true, "emailVerified": true,
+      "firstName": "Normal", "lastName": "User", "email": "normaluser@corp.local",
+      "credentials": [{ "type": "password", "value": "${KC_TEST_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "opsadmin", "enabled": true, "emailVerified": true,
+      "firstName": "Ops", "lastName": "Admin", "email": "opsadmin@corp.local",
+      "realmRoles": ["blocker"],
+      "credentials": [{ "type": "password", "value": "${KC_TEST_USER_PASSWORD}", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "poc-cli",
+      "name": "User login for tests (password grant)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        { "name": "upn", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": { "user.attribute": "email", "claim.name": "upn", "jsonType.label": "String",
+                      "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true" } },
+        { "name": "caller_id", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": { "user.attribute": "email", "claim.name": "caller_id", "jsonType.label": "String",
+                      "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false" } },
+        { "name": "aud-gateway", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api://kong-gateway", "access.token.claim": "true", "id.token.claim": "false" } },
+        { "name": "aud-blocking", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api://blocking-service", "access.token.claim": "true", "id.token.claim": "false" } },
+        { "name": "roles", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": { "claim.name": "roles", "multivalued": "true", "jsonType.label": "String",
+                      "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false" } }
+      ]
+    },
+    {
+      "clientId": "reports-service",
+      "name": "System token (client credentials)",
+      "enabled": true, "publicClient": false, "secret": "${KC_SYSTEM_CLIENT_SECRET}",
+      "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        { "name": "caller_id", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": { "claim.name": "caller_id", "claim.value": "reports-service", "jsonType.label": "String", "access.token.claim": "true" } },
+        { "name": "aud-gateway", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api://kong-gateway", "access.token.claim": "true" } }
+      ]
+    },
+    {
+      "clientId": "billing-service",
+      "name": "System token (client credentials)",
+      "enabled": true, "publicClient": false, "secret": "${KC_SYSTEM_CLIENT_SECRET}",
+      "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        { "name": "caller_id", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": { "claim.name": "caller_id", "claim.value": "billing-service", "jsonType.label": "String", "access.token.claim": "true" } },
+        { "name": "aud-gateway", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api://kong-gateway", "access.token.claim": "true" } }
+      ]
+    },
+    {
+      "clientId": "legacy-service",
+      "name": "System token WITHOUT caller_id (acceptance test 3)",
+      "enabled": true, "publicClient": false, "secret": "${KC_SYSTEM_CLIENT_SECRET}",
+      "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        { "name": "aud-gateway", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api://kong-gateway", "access.token.claim": "true" } }
+      ]
+    },
+    {
+      "clientId": "other-app",
+      "name": "Token for a different audience (acceptance test 2)",
+      "enabled": true, "publicClient": false, "secret": "${KC_SYSTEM_CLIENT_SECRET}",
+      "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        { "name": "caller_id", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": { "claim.name": "caller_id", "claim.value": "other-app", "jsonType.label": "String", "access.token.claim": "true" } },
+        { "name": "aud-other", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api://other-app", "access.token.claim": "true" } }
+      ]
+    },
+    {
+      "clientId": "short-lived",
+      "name": "5-second tokens (expiry test)",
+      "enabled": true, "publicClient": false, "secret": "${KC_SYSTEM_CLIENT_SECRET}",
+      "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+      "attributes": { "access.token.lifespan": "5" },
+      "protocolMappers": [
+        { "name": "caller_id", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": { "claim.name": "caller_id", "claim.value": "short-lived", "jsonType.label": "String", "access.token.claim": "true" } },
+        { "name": "aud-gateway", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api://kong-gateway", "access.token.claim": "true" } }
+      ]
+    }
+  ]
+}

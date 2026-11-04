@@ -1,0 +1,6 @@
+apiVersion: v2
+name: opa
+description: Per-leg OPA for Kong's opa plugin - policy from Git (ConfigMap opa-policy), data bundle polled from the blocking service
+type: application
+version: 0.1.0
+appVersion: "1.4.2"

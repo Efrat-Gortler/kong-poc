@@ -1,0 +1,23 @@
+# Per-leg identity, shared by every per-leg chart AND read by the ArgoCD
+# ApplicationSets (git files generator). To add a leg: scripts/add-leg.sh leg3
+#
+# Top-level keys (leg, profile) are ApplicationSet parameters.
+# `global` is passed to every per-leg Helm chart as a values file.
+leg: leg1
+profile: small            # small | full  -> picks values-profile-<profile>.yaml
+global:
+  leg: leg1
+  kong:
+    ingressClass: kong-leg1
+    gatewayClassName: kong-leg1
+    gatewayName: kong
+    controllerName: konghq.com/kic-gateway-controller-leg1
+  redis:
+    # Fixed alias Service rendered by kong-global in this namespace (ExternalName -> real Redis)
+    host: kong-redis.leg1.svc.cluster.local
+    port: 6379
+    passwordSecret: redis-auth        # Secret in this leg's namespace, key: password
+    # rate-limiting (route-wide) MUST stay per leg -> own logical DB per leg.
+    routeLimitDatabase: 1
+    # rate-limiting-advanced (per user) MUST be shared across legs -> same DB everywhere.
+    userLimitDatabase: 0

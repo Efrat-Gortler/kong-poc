@@ -1,0 +1,15 @@
+component: reports
+kongRoutes:
+  - name: reports
+    path: /reports
+    service: reports
+    port: 8080
+    routeLimitPerSecond: 400
+    userLimitPerMinute: 100
+  # Test route for acceptance test 4 (route-wide limit is per leg): low, per-minute.
+  - name: reports-limited
+    path: /reports/limited
+    service: reports
+    port: 8080
+    routeLimitPerMinute: 20
+    userLimitPerMinute: 1000

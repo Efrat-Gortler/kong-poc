@@ -1,0 +1,6 @@
+apiVersion: v2
+name: redis
+description: Single shared Redis for rate-limit counters (POC). Counters only - no persistence needed.
+type: application
+version: 0.1.0
+appVersion: "7.4.2"

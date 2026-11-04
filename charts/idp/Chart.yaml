@@ -1,0 +1,6 @@
+apiVersion: v2
+name: idp
+description: Keycloak simulating ADFS - realms imported from Git, users/clients for the acceptance tests
+type: application
+version: 0.1.0
+appVersion: "26.0.7"

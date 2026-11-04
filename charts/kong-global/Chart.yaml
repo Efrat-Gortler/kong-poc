@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kong-global
+description: Per-leg Kong objects - GatewayClass, Gateway, global plugins (auth, blocking, observability), Redis alias, NetworkPolicies
+type: application
+version: 0.1.0
+appVersion: "poc"

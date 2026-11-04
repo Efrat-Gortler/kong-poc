@@ -1,0 +1,41 @@
+build:
+  gitUri: https://github.com/khibye/kong-poc.git
+  gitRef: main
+  contextDir: services/blocking-service
+  sourceSecret: github-source       # basic-auth Secret (GitHub token) for the private repo
+  imageTag: poc
+
+routeHost: blocking-blocking.apps-crc.testing
+
+auth:
+  issuer: http://keycloak.idp.svc.cluster.local:8080/realms/corp
+  audience: api://blocking-service
+  blockerRole: blocker
+
+secrets:
+  readerKey: blocklist-reader        # key: api-key   (same value is copied to every leg)
+  database: blocking-db              # keys: username, password
+
+# Routes that may be blocked (route / user_on_route). Must match HTTPRoute names.
+knownRoutes:
+  - orders
+  - orders-create
+  - reports
+  - reports-limited
+  - users
+  - users-limited
+  - users-limited-2
+
+resources:
+  requests: { cpu: 50m, memory: 96Mi }
+  limits: { memory: 256Mi }
+
+postgres:
+  image: docker.io/library/postgres:16.6
+  storage: 1Gi
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { memory: 384Mi }
+
+# Who may call the service: the legs (Lua plugin, OPA), the router (Swagger route)
+allowFromNamespaces: [leg1, leg2]

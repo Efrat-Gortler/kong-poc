@@ -1,0 +1,18 @@
+# Leg-specific values for kong/ingress. Non-secret only.
+# KONNECT_* placeholders are filled by scripts/konnect-setup.sh leg2.
+controller:
+  ingressController:
+    ingressClass: kong-leg2
+    watchNamespaces: [leg2]
+    env:
+      gateway_api_controller_name: konghq.com/kic-gateway-controller-leg2
+    konnect:
+      controlPlaneID: "KONNECT_CP_ID_LEG2"
+    admissionWebhook:
+      namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: leg2
+gateway:
+  env:
+    cluster_telemetry_endpoint: "KONNECT_TP_HOST_LEG2:443"
+    cluster_telemetry_server_name: "KONNECT_TP_HOST_LEG2"

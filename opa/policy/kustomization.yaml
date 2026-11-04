@@ -1,0 +1,12 @@
+# Ships the Rego policy to each leg as the ConfigMap "opa-policy" (mounted by charts/opa).
+# Tests (*_test.rego) stay out of the ConfigMap. Run them with: opa test opa/policy -v
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+configMapGenerator:
+  - name: opa-policy
+    files:
+      - authz.rego

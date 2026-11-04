@@ -1,0 +1,129 @@
+{{- /*
+Global plugins (label global: "true"). KongClusterPlugin is cluster-scoped, so
+names are prefixed with the leg and each carries this leg's ingress class.
+
+Execution order (priority, higher runs first):
+  openid-connect 1050 -> blocklist 1000 -> opa 920 -> rate-limiting(-advanced) 910
+so a blocked request is rejected before it can consume rate-limit quota.
+*/ -}}
+{{- $leg := .Values.global.leg -}}
+{{- $ns := .Release.Namespace -}}
+{{- if .Values.auth.enabled }}
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: {{ $leg }}-openid-connect
+  labels:
+    global: "true"
+    {{- include "kong-global.labels" . | nindent 4 }}
+  annotations:
+    {{- include "kong-global.classAnnotation" . | nindent 4 }}
+plugin: openid-connect
+config:
+  issuer: {{ printf "%s/.well-known/openid-configuration" .Values.auth.issuer | quote }}
+  issuers_allowed:
+    - {{ .Values.auth.issuer | quote }}
+  auth_methods: [bearer]
+  bearer_token_param_type: [header]
+  verify_signature: {{ .Values.auth.verifySignature }}
+  verify_claims: {{ .Values.auth.verifyClaims }}
+  {{- with .Values.auth.audienceRequired }}
+  audience_required:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  # No Kong Consumer per user: the claim itself becomes the authenticated credential.
+  credential_claim: [{{ .Values.auth.credentialClaim }}]
+  {{- with .Values.auth.upstreamCallerHeader }}
+  upstream_headers_claims: [{{ $.Values.auth.credentialClaim }}]
+  upstream_headers_names: [{{ . }}]
+  {{- end }}
+---
+{{- end }}
+{{- if has .Values.blocking.mode (list "lua" "both-observe") }}
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: {{ $leg }}-blocklist
+  labels:
+    global: "true"
+    {{- include "kong-global.labels" . | nindent 4 }}
+  annotations:
+    {{- include "kong-global.classAnnotation" . | nindent 4 }}
+plugin: blocklist
+config:
+  service_url: {{ .Values.blocking.serviceUrl | quote }}
+  poll_interval: {{ .Values.blocking.pollIntervalSeconds }}
+  fail_open: {{ .Values.blocking.failOpen }}
+  observe_only: {{ eq .Values.blocking.mode "both-observe" }}
+  leg: {{ $leg | quote }}
+configPatches:
+  - path: /api_key
+    valueFrom:
+      secretKeyRef:
+        name: {{ .Values.blocking.readerSecret }}
+        namespace: {{ $ns }}
+        key: api-key
+---
+{{- end }}
+{{- if has .Values.blocking.mode (list "opa" "both-observe") }}
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: {{ $leg }}-opa
+  labels:
+    global: "true"
+    {{- include "kong-global.labels" . | nindent 4 }}
+  annotations:
+    {{- include "kong-global.classAnnotation" . | nindent 4 }}
+plugin: opa
+config:
+  opa_protocol: http
+  opa_host: {{ printf "%s.%s.svc.cluster.local" .Values.blocking.opa.host $ns | quote }}
+  opa_port: {{ .Values.blocking.opa.port }}
+  opa_path: {{ .Values.blocking.opa.path | quote }}
+  include_route_in_opa_input: true
+---
+{{- end }}
+{{- if .Values.observability.prometheus }}
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: {{ $leg }}-prometheus
+  labels:
+    global: "true"
+    {{- include "kong-global.labels" . | nindent 4 }}
+  annotations:
+    {{- include "kong-global.classAnnotation" . | nindent 4 }}
+plugin: prometheus
+config:
+  status_code_metrics: true
+  latency_metrics: true
+  bandwidth_metrics: false
+  upstream_health_metrics: true
+  per_consumer: false
+---
+{{- end }}
+{{- if .Values.observability.accessLog }}
+# One JSON line per request on stdout, with the fields needed later to compute
+# per-user concurrency from logs: route, caller_id, start time, latency, leg.
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: {{ $leg }}-access-log
+  labels:
+    global: "true"
+    {{- include "kong-global.labels" . | nindent 4 }}
+  annotations:
+    {{- include "kong-global.classAnnotation" . | nindent 4 }}
+plugin: file-log
+config:
+  path: /dev/stdout
+  reopen: false
+  custom_fields_by_lua:
+    caller_id: "local c = kong.client.get_credential() return c and c.id or nil"
+    leg: "return '{{ $leg }}'"
+    route_name: "local r = kong.router.get_route() return r and r.name or nil"
+    # never write bearer tokens into logs (returning nil removes the field)
+    request.headers.authorization: "return nil"
+---
+{{- end }}

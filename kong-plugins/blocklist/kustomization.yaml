@@ -1,0 +1,16 @@
+# Ships the plugin code to each leg as the ConfigMap "kong-plugin-blocklist".
+# The kong/ingress chart mounts it at /opt/kong/plugins/blocklist and adds
+# "blocklist" to KONG_PLUGINS (charts/kong-values: gateway.plugins.configMaps).
+# A code change here needs a rolling restart of the gateway pods (code, not config).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+configMapGenerator:
+  - name: kong-plugin-blocklist
+    files:
+      - kong/plugins/blocklist/handler.lua
+      - kong/plugins/blocklist/schema.lua
+      - kong/plugins/blocklist/matcher.lua

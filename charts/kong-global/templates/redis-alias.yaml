@@ -1,0 +1,15 @@
+# Fixed name for this leg's Redis. Plugins always point at kong-redis.<ns>.svc;
+# only this alias changes if Redis moves (in production: the leg-local Redis).
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kong-global.labels" . | nindent 4 }}
+spec:
+  type: ExternalName
+  externalName: {{ .Values.redisTarget }}
+  ports:
+    - name: redis
+      port: {{ .Values.global.redis.port }}

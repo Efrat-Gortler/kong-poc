@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blocking-service-config
+data:
+  appsettings.Production.json: |
+    {
+      "Auth": {
+        "Issuer": {{ .Values.auth.issuer | quote }},
+        "Audience": {{ .Values.auth.audience | quote }},
+        "BlockerRole": {{ .Values.auth.blockerRole | quote }}
+      },
+      "Blocking": {
+        "KnownRoutes": {{ .Values.knownRoutes | toJson }}
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blocking-service
+  labels:
+    app.kubernetes.io/name: blocking-service
+    app.kubernetes.io/part-of: kong-poc
+  annotations:
+    # roll out automatically whenever a new image is pushed to the ImageStreamTag
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"blocking-service:{{ .Values.build.imageTag }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: blocking-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: blocking-service
+        app.kubernetes.io/part-of: kong-poc
+      annotations:
+        checksum/config: {{ toJson .Values.knownRoutes | sha256sum | trunc 12 }}
+    spec:
+      containers:
+        - name: app
+          image: blocking-service:{{ .Values.build.imageTag }}
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.database }}, key: username } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.database }}, key: password } }
+            - name: ConnectionStrings__Blocking
+              value: "Host=blocking-db;Port=5432;Database=blocking;Username=$(DB_USER);Password=$(DB_PASSWORD)"
+            - name: Reader__ApiKey
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.readerKey }}, key: api-key } }
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - name: config
+              mountPath: /app/appsettings.Production.json
+              subPath: appsettings.Production.json
+              readOnly: true
+      volumes:
+        - name: config
+          configMap: { name: blocking-service-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blocking-service
+spec:
+  selector:
+    app.kubernetes.io/name: blocking-service
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+# Swagger UI for operators: https://{{ .Values.routeHost }}/swagger
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: blocking-service
+spec:
+  host: {{ .Values.routeHost }}
+  to: { kind: Service, name: blocking-service }
+  port: { targetPort: http }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: blocking-service-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: blocking-service
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range .Values.allowFromNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+        - namespaceSelector:     # OpenShift router (Swagger route)
+            matchLabels:
+              policy-group.network.openshift.io/ingress: ""
+      ports:
+        - { port: 8080, protocol: TCP }

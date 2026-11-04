@@ -1,0 +1,16 @@
+# Reduced profile for OpenShift Local (CRC) on a workstation.
+# Same features, fewer/smaller pods. Selected by `profile: small` in environments/<leg>.yaml.
+gateway:
+  autoscaling:
+    minReplicas: 1
+    maxReplicas: 2
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  env:
+    nginx_worker_processes: "1"
+controller:
+  ingressController:
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 320Mi }

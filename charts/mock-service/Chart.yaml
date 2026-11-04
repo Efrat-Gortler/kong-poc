@@ -1,0 +1,10 @@
+apiVersion: v2
+name: mock-service
+description: Generic echo backend (used as orders / reports / users). Declares its own Kong routes, like a real component chart would.
+type: application
+version: 0.1.0
+appVersion: "poc"
+dependencies:
+  - name: kong-route-lib
+    version: 0.1.0
+    repository: file://../kong-route-lib

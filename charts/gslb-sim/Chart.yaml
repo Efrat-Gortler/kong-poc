@@ -1,0 +1,6 @@
+apiVersion: v2
+name: gslb-sim
+description: GSLB simulator - HAProxy round robin across the legs' Kong proxies, with drain/ready control
+type: application
+version: 0.1.0
+appVersion: "3.0.5"

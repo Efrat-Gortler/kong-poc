@@ -1,0 +1,129 @@
+{{- if .Values.networkPolicies.ingress.enabled }}
+# Who may send requests into this leg: the GSLB (simulator) to the Kong proxy,
+# and pods of this namespace among themselves (KIC -> admin API, Kong -> backends).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kong-global.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gslb-to-kong-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kong-global.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range .Values.networkPolicies.ingress.fromNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+      ports:
+        - port: 8000
+          protocol: TCP
+---
+# kube-apiserver (host network) calling the KIC admission webhook.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apiserver-webhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kong-global.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              policy-group.network.openshift.io/host-network: ""
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Prometheus (user-workload monitoring) scraping the Kong status/metrics port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kong-global.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: monitoring
+      ports:
+        - port: 8100
+          protocol: TCP
+---
+{{- end }}
+{{- if .Values.networkPolicies.egress.enabled }}
+# Where the Kong gateway pods may connect. Not applied to the controller pods
+# (they need the Kubernetes API and Konnect).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kong-gateway-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kong-global.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml .Values.networkPolicies.egress.gatewayPodSelector | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:   # DNS
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - { port: 5353, protocol: UDP }
+        - { port: 5353, protocol: TCP }
+    - to:   # backends and OPA in this leg
+        - podSelector: {}
+    - to:   # shared Redis
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gw-shared
+      ports:
+        - { port: 6379, protocol: TCP }
+    - to:   # IdP (discovery + JWKS)
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: idp
+      ports:
+        - { port: 8080, protocol: TCP }
+    - to:   # blocking service (Lua plugin polling)
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: blocking
+      ports:
+        - { port: 8080, protocol: TCP }
+    - to:   # Konnect (license, telemetry) - outside the cluster
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - { port: 443, protocol: TCP }
+---
+{{- end }}

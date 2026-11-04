@@ -1,0 +1,5 @@
+apiVersion: v2
+name: kong-route-lib
+description: Library chart - renders HTTPRoute + per-route KongPlugins (route-wide and per-user rate limits) from `kongRoutes:` values
+type: library
+version: 0.1.0

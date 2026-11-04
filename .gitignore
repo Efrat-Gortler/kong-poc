@@ -1,0 +1,15 @@
+# never commit secrets / generated keys
+*.key
+*.pem
+tls.crt
+.env
+secrets/
+.konnect/
+# build output
+**/bin/
+**/obj/
+charts/*/charts/
+charts/*/Chart.lock
+__pycache__/
+.pytest_cache/
+tests/results/

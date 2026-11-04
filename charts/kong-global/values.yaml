@@ -1,0 +1,65 @@
+# Overridden by ../../environments/<leg>.yaml (global.*) and values-<leg>.yaml
+global:
+  leg: leg1
+  kong:
+    ingressClass: kong-leg1
+    gatewayClassName: kong-leg1
+    gatewayName: kong
+    controllerName: konghq.com/kic-gateway-controller-leg1
+  redis:
+    host: kong-redis.leg1.svc.cluster.local
+    port: 6379
+    passwordSecret: redis-auth
+    routeLimitDatabase: 1
+    userLimitDatabase: 0
+
+# Real Redis behind the per-leg alias Service "kong-redis".
+redisTarget: redis.gw-shared.svc.cluster.local
+
+# ---- Authentication (openid-connect, global) ----
+auth:
+  enabled: true
+  issuer: http://keycloak.idp.svc.cluster.local:8080/realms/corp
+  # Each check can be switched off for a gradual rollout.
+  verifySignature: true
+  verifyClaims: true          # exp, iss, nbf ...
+  audienceRequired: ["api://kong-gateway"]   # [] disables the audience check
+  # The claim that becomes the authenticated (virtual) credential -> used by
+  # rate-limiting-advanced (identifier: credential) and by the blocking plugins.
+  credentialClaim: caller_id
+  # Forward the verified claim to the upstream (overwrites any client-sent header).
+  upstreamCallerHeader: x-caller-id
+
+# ---- Blocking ----
+blocking:
+  # lua          -> custom blocklist plugin enforces
+  # opa          -> Kong opa plugin enforces (needs the opa chart in this leg)
+  # both-observe -> opa enforces, Lua only logs/marks what it WOULD block
+  # off          -> no blocking plugin
+  mode: lua
+  serviceUrl: http://blocking-service.blocking.svc.cluster.local:8080/api/blocklist
+  readerSecret: blocklist-reader      # Secret in this leg's namespace, key: api-key
+  pollIntervalSeconds: 5
+  failOpen: false                     # behaviour before the FIRST successful fetch
+  opa:
+    host: opa                         # Service in this leg's namespace
+    port: 8181
+    path: /v1/data/kong/authz/decision
+
+# ---- Observability ----
+observability:
+  prometheus: true
+  accessLog: true
+
+# ---- NetworkPolicies ----
+networkPolicies:
+  ingress:
+    enabled: true
+    # namespaces allowed to reach the Kong proxy
+    fromNamespaces: [gslb-sim]
+  egress:
+    # Off until gateway pod labels are confirmed on the cluster (Phase 3), because a
+    # wrong selector would cut the controller off from the Kubernetes API.
+    enabled: false
+    gatewayPodSelector:
+      app.kubernetes.io/name: gateway

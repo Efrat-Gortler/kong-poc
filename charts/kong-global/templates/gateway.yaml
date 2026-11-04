@@ -1,0 +1,30 @@
+# Entry point. Every HTTPRoute in this leg attaches to this Gateway.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: {{ .Values.global.kong.gatewayClassName }}
+  labels:
+    {{- include "kong-global.labels" . | nindent 4 }}
+  annotations:
+    # KIC configures an existing Kong (installed by the kong/ingress chart);
+    # it does not provision a new data plane per Gateway.
+    konghq.com/gatewayclass-unmanaged: "true"
+spec:
+  controllerName: {{ .Values.global.kong.controllerName }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.global.kong.gatewayName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kong-global.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: {{ .Values.global.kong.gatewayClassName }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same

@@ -1,0 +1,15 @@
+global:
+  leg: leg1
+
+enabled: true
+image: docker.io/openpolicyagent/opa:1.4.2-static
+replicas: 1
+blockingService: http://blocking-service.blocking.svc.cluster.local:8080
+bundleResource: /api/opa/bundle.tar.gz
+readerSecret: blocklist-reader     # Secret in this namespace, key: api-key
+polling:
+  minDelaySeconds: 2
+  maxDelaySeconds: 4
+resources:
+  requests: { cpu: 50m, memory: 48Mi }
+  limits: { memory: 192Mi }

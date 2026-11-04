@@ -1,0 +1,30 @@
+global:
+  leg: leg1
+  kong:
+    gatewayName: kong
+  redis:
+    host: kong-redis.leg1.svc.cluster.local
+    port: 6379
+    passwordSecret: redis-auth
+    routeLimitDatabase: 1
+    userLimitDatabase: 0
+
+# Component name = Service name = what routes point at. Set by values-<component>.yaml.
+component: orders
+replicas: 1
+image: docker.io/library/python:3.12.8-slim
+port: 8080
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits: { memory: 96Mi }
+
+# Upstream timeouts on the Service (konghq.com/* annotations)
+kongTimeouts:
+  connectMs: 2000
+  readMs: 10000
+  writeMs: 10000
+
+kongRouteDefaults:
+  userLimitFirst: true
+
+kongRoutes: []

@@ -1,0 +1,12 @@
+image: quay.io/keycloak/keycloak:26.0.7
+# The issuer is pinned to the in-cluster URL, so tokens fetched through the external
+# Route carry the same `iss` that Kong (inside the cluster) validates.
+internalUrl: http://keycloak.idp.svc.cluster.local:8080
+# External host for the admin console and for fetching tokens from a workstation.
+routeHost: keycloak-idp.apps-crc.testing
+secrets:
+  admin: keycloak-admin              # keys: username, password
+  testCredentials: idp-test-credentials  # keys: KC_TEST_USER_PASSWORD, KC_SYSTEM_CLIENT_SECRET
+resources:
+  requests: { cpu: 250m, memory: 512Mi }
+  limits: { memory: 1Gi }

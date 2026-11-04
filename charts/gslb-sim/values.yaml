@@ -1,0 +1,15 @@
+image: docker.io/library/haproxy:3.0.5
+controlImage: docker.io/library/python:3.12.8-slim
+routeHost: gslb-gslb-sim.apps-crc.testing
+controlRouteHost: gslb-control-gslb-sim.apps-crc.testing
+
+# One entry per leg. Adding a leg = one more line (scripts/add-leg.sh does it).
+legs:
+  - name: leg1
+    address: kong-leg1-gateway-proxy.leg1.svc.cluster.local:80
+  - name: leg2
+    address: kong-leg2-gateway-proxy.leg2.svc.cluster.local:80
+
+resources:
+  requests: { cpu: 20m, memory: 32Mi }
+  limits: { memory: 128Mi }
