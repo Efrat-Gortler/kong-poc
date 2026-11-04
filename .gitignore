@@ -13,3 +13,4 @@ charts/*/Chart.lock
 __pycache__/
 .pytest_cache/
 tests/results/
+rendered/
