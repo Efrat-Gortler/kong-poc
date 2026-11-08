@@ -1,4 +1,4 @@
-# Code shipped as ConfigMaps into every leg: the Lua plugin and the Rego policy.
+# Code shipped as ConfigMaps into every ACTIVE leg: the Lua plugin and the Rego policy.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -18,11 +18,12 @@ spec:
           - list:
               elements:
                 - { app: kong-plugin-blocklist, path: kong-plugins/blocklist }
-                - { app: opa-policy,            path: opa/policy }
+                - { app: opa-policy, path: opa/policy }
   template:
     metadata:
       name: '{{ .leg }}-{{ .app }}'
       labels: { kong-poc/leg: '{{ .leg }}', kong-poc/app: '{{ .app }}' }
+      finalizers: [resources-finalizer.argocd.argoproj.io]
     spec:
       project: kong-poc
       source:

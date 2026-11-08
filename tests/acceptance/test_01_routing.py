@@ -3,7 +3,7 @@ from collections import Counter
 
 import pytest
 
-from conftest import LEGS
+from conftest import LEGS, two_legs
 
 
 @pytest.mark.parametrize("path,service", [
@@ -32,6 +32,7 @@ def test_unknown_path_is_404(gslb):
     assert gslb.request("/nope").status_code == 404
 
 
+@two_legs
 def test_round_robin_hits_every_leg(gslb, record):
     seen = Counter(gslb.request("/orders/rr").json()["leg"] for _ in range(4 * len(LEGS)))
     record("distribution", dict(seen))

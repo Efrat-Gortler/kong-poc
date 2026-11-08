@@ -1,5 +1,5 @@
-# Kong itself in every leg: the official kong/ingress chart (pinned) + our values from Git.
-# One Application per file in environments/ -> adding environments/leg3.yaml adds a leg.
+# Kong itself in every ACTIVE leg (environments/*.yaml; parked legs in environments/standby/
+# are skipped): the official kong/ingress chart (pinned) + our values from Git.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -9,15 +9,24 @@ spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   generators:
-    - git:
-        repoURL: https://github.com/Efrat-Gortler/kong-poc.git
-        revision: main
-        files:
-          - path: environments/*.yaml
+    - matrix:
+        generators:
+          - git:   # the platform switch: cluster/platform.yaml -> .platform
+              repoURL: https://github.com/Efrat-Gortler/kong-poc.git
+              revision: main
+              pathParamPrefix: cluster
+              files:
+                - path: cluster/platform.yaml
+          - git:   # one element per active leg -> .leg, .profile
+              repoURL: https://github.com/Efrat-Gortler/kong-poc.git
+              revision: main
+              files:
+                - path: environments/*.yaml
   template:
     metadata:
       name: '{{ .leg }}-kong'
       labels: { kong-poc/leg: '{{ .leg }}', kong-poc/app: kong }
+      finalizers: [resources-finalizer.argocd.argoproj.io]   # parking a leg removes its resources
     spec:
       project: kong-poc
       sources:
@@ -29,6 +38,7 @@ spec:
             skipCrds: true            # CRDs come from the kong-crds app, once per cluster
             valueFiles:
               - $values/charts/kong-values/values.yaml
+              - '$values/charts/kong-values/values-platform-{{ .platform }}.yaml'
               - '$values/charts/kong-values/values-profile-{{ .profile }}.yaml'
               - '$values/charts/kong-values/values-{{ .leg }}.yaml'
         - repoURL: https://github.com/Efrat-Gortler/kong-poc.git

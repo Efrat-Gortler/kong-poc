@@ -1,7 +1,12 @@
 image: docker.io/library/haproxy:3.0.5
 controlImage: docker.io/library/python:3.12.8-slim
-routeHost: gslb-gslb-sim.apps-crc.testing
-controlRouteHost: gslb-control-gslb-sim.apps-crc.testing
+global:
+  platform: openshift
+  appsDomain: apps-crc.testing
+
+# external hosts: <prefix>.<global.appsDomain>
+hostPrefix: gslb-gslb-sim
+controlHostPrefix: gslb-control-gslb-sim
 
 # One entry per leg. Adding a leg = one more line (scripts/add-leg.sh does it).
 legs:

@@ -1,3 +1,15 @@
+global:
+  platform: openshift
+  appsDomain: apps-crc.testing
+
+# OpenShift: built in the cluster by a BuildConfig from Git (below).
+# Kubernetes: pulled from GHCR, built by .github/workflows/blocking-service-image.yml.
+image:
+  repository: ghcr.io/efrat-gortler/kong-poc/blocking-service
+  tag: main
+  pullPolicy: Always          # `main` moves; restart the Deployment to pick up a new build
+  pullSecret: ""              # e.g. ghcr-pull, if the GHCR package is private
+
 build:
   gitUri: https://github.com/Efrat-Gortler/kong-poc.git
   gitRef: main
@@ -5,7 +17,7 @@ build:
   sourceSecret: github-source       # basic-auth Secret (GitHub token) for the private repo
   imageTag: poc
 
-routeHost: blocking-blocking.apps-crc.testing
+hostPrefix: blocking-blocking   # Swagger UI at <hostPrefix>.<global.appsDomain>/swagger
 
 auth:
   issuer: http://keycloak.idp.svc.cluster.local:8080/realms/corp

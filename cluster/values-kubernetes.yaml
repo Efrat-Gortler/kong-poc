@@ -1,0 +1,7 @@
+# Helm values merged into EVERY chart when platform=kubernetes (last value file but one).
+global:
+  platform: kubernetes
+  # *.localtest.me resolves to 127.0.0.1 in public DNS; k3d maps host port 80 to Traefik.
+  appsDomain: localtest.me
+  ingressScheme: http
+  ingressClass: traefik

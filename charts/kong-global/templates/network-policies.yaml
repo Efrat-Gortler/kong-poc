@@ -36,6 +36,7 @@ spec:
         - port: 8000
           protocol: TCP
 ---
+{{- if include "poc.isOpenShift" . }}
 # Prometheus (user-workload monitoring) scraping the Kong status/metrics port.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -57,6 +58,7 @@ spec:
           protocol: TCP
 ---
 {{- end }}
+{{- end }}
 {{- if .Values.networkPolicies.egress.enabled }}
 # Where the Kong gateway pods may connect. Not applied to the controller pods
 # (they need the Kubernetes API and Konnect).
@@ -76,10 +78,15 @@ spec:
     - to:   # DNS
         - namespaceSelector:
             matchLabels:
+              {{- if include "poc.isOpenShift" . }}
               kubernetes.io/metadata.name: openshift-dns
+              {{- else }}
+              kubernetes.io/metadata.name: kube-system
+              {{- end }}
       ports:
-        - { port: 5353, protocol: UDP }
-        - { port: 5353, protocol: TCP }
+        {{- $dns := 53 }}{{- if include "poc.isOpenShift" . }}{{ $dns = 5353 }}{{ end }}
+        - { port: {{ $dns }}, protocol: UDP }
+        - { port: {{ $dns }}, protocol: TCP }
     - to:   # backends and OPA in this leg
         - podSelector: {}
     - to:   # shared Redis

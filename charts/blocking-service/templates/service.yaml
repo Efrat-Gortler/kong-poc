@@ -22,10 +22,12 @@ metadata:
   labels:
     app.kubernetes.io/name: blocking-service
     app.kubernetes.io/part-of: kong-poc
+  {{- if include "poc.isOpenShift" . }}
   annotations:
     # roll out automatically whenever a new image is pushed to the ImageStreamTag
     image.openshift.io/triggers: >-
       [{"from":{"kind":"ImageStreamTag","name":"blocking-service:{{ .Values.build.imageTag }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]
+  {{- end }}
 spec:
   replicas: 1
   selector:
@@ -39,9 +41,18 @@ spec:
       annotations:
         checksum/config: {{ toJson .Values.knownRoutes | sha256sum | trunc 12 }}
     spec:
+      {{- include "poc.podSecurityContext" . | nindent 6 }}
+      {{- with .Values.image.pullSecret }}
+      imagePullSecrets: [{ name: {{ . }} }]
+      {{- end }}
       containers:
         - name: app
+          {{- if include "poc.isOpenShift" . }}
           image: blocking-service:{{ .Values.build.imageTag }}
+          {{- else }}
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- end }}
           env:
             - name: ASPNETCORE_ENVIRONMENT
               value: Production
@@ -87,16 +98,8 @@ spec:
   ports:
     - { name: http, port: 8080, targetPort: http }
 ---
-# Swagger UI for operators: https://{{ .Values.routeHost }}/swagger
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: blocking-service
-spec:
-  host: {{ .Values.routeHost }}
-  to: { kind: Service, name: blocking-service }
-  port: { targetPort: http }
-  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
+# Swagger UI for operators: <scheme>://<hostPrefix>.<appsDomain>/swagger
+{{ include "poc.expose" (list . "blocking-service" .Values.hostPrefix "blocking-service" "http") }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -112,8 +115,7 @@ spec:
         - namespaceSelector:
             matchLabels:
               {{- toYaml .Values.legNamespaceLabel | nindent 14 }}
-        - namespaceSelector:     # OpenShift router (Swagger route)
-            matchLabels:
-              policy-group.network.openshift.io/ingress: ""
+        # the cluster's ingress router (Swagger UI)
+        - {{- include "poc.routerNamespaceSelector" . | nindent 10 }}
       ports:
         - { port: 8080, protocol: TCP }

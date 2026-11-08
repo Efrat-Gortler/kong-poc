@@ -23,25 +23,35 @@ from pathlib import Path
 
 import pytest
 import requests
+import shutil
+import yaml
 
 urllib3.disable_warnings()
 
 REPO = Path(__file__).resolve().parents[2]
 RESULTS = REPO / "tests" / "results"
-DOMAIN = os.environ.get("APPS_DOMAIN", "apps-crc.testing")
-GSLB_URL = os.environ.get("GSLB_URL", f"https://gslb-gslb-sim.{DOMAIN}")
-GSLB_CONTROL_URL = os.environ.get("GSLB_CONTROL_URL", f"https://gslb-control-gslb-sim.{DOMAIN}")
-KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", f"https://keycloak-idp.{DOMAIN}")
-BLOCKING_URL = os.environ.get("BLOCKING_URL", f"https://blocking-blocking.{DOMAIN}")
+# platform switch (cluster/platform.yaml) -> hosts and scheme from cluster/values-<platform>.yaml
+PLATFORM = os.environ.get("POC_PLATFORM") or yaml.safe_load((REPO / "cluster/platform.yaml").read_text())["platform"]
+_CLUSTER = yaml.safe_load((REPO / f"cluster/values-{PLATFORM}.yaml").read_text())["global"]
+DOMAIN = os.environ.get("APPS_DOMAIN", _CLUSTER["appsDomain"])
+SCHEME = os.environ.get("SCHEME", _CLUSTER["ingressScheme"])
+GSLB_URL = os.environ.get("GSLB_URL", f"{SCHEME}://gslb-gslb-sim.{DOMAIN}")
+GSLB_CONTROL_URL = os.environ.get("GSLB_CONTROL_URL", f"{SCHEME}://gslb-control-gslb-sim.{DOMAIN}")
+KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", f"{SCHEME}://keycloak-idp.{DOMAIN}")
+BLOCKING_URL = os.environ.get("BLOCKING_URL", f"{SCHEME}://blocking-blocking.{DOMAIN}")
+# active legs only (parked legs are in environments/standby/)
 LEGS = sorted(p.stem for p in (REPO / "environments").glob("*.yaml"))
+KUBECTL = os.environ.get("KUBECTL") or ("oc" if shutil.which("oc") else "kubectl")
+# tests whose point is the difference between legs
+two_legs = pytest.mark.skipif(len(LEGS) < 2, reason="needs 2 active legs: scripts/leg.sh up leg2")
 USERS = {"666efratg", "777danag", "normaluser", "opsadmin"}
 
 
 # ---------------------------------------------------------------- helpers
 def oc(*args: str, check: bool = True, input: str | None = None) -> str:
-    r = subprocess.run(["oc", *args], capture_output=True, text=True, input=input)
+    r = subprocess.run([KUBECTL, *args], capture_output=True, text=True, input=input)
     if check and r.returncode != 0:
-        raise RuntimeError(f"oc {' '.join(args)} failed: {r.stderr.strip()}")
+        raise RuntimeError(f"{KUBECTL} {' '.join(args)} failed: {r.stderr.strip()}")
     return r.stdout
 
 

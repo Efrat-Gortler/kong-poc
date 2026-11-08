@@ -1,15 +1,12 @@
 # Values for the OFFICIAL chart kong/ingress (pinned in argocd/apps/legs-kong.yaml).
 # This directory is not a chart: ArgoCD uses it as a multi-source "$values" ref.
-# Layering: values.yaml -> values-profile-<profile>.yaml -> values-<leg>.yaml
+# Layering: values.yaml -> values-platform-<platform>.yaml -> values-profile-<profile>.yaml -> values-<leg>.yaml
 #
 # Cluster-scoped objects are per leg (ingress class, GatewayClass controller
 # name, admission webhook) because both POC legs share ONE cluster. In
 # production each leg is its own cluster and these can all be plain "kong".
 
 controller:
-  # OpenShift assigns UIDs through SCC; the chart's fixed runAsUser 1000 is rejected.
-  containerSecurityContext:
-    enabled: false
   ingressController:
     image:
       repository: kong/kubernetes-ingress-controller
@@ -38,8 +35,6 @@ controller:
       limits: { memory: 384Mi }
 
 gateway:
-  containerSecurityContext:
-    enabled: false
   image:
     repository: kong/kong-gateway
     # 3.14 = current LTS (supported until 2029-04). Exact patch verified in Phase 3.

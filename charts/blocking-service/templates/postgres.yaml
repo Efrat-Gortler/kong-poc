@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: blocking-db
         app.kubernetes.io/part-of: kong-poc
     spec:
+      {{- include "poc.podSecurityContext" . | nindent 6 }}
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}

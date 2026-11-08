@@ -1,3 +1,4 @@
+{{- if include "poc.isOpenShift" . }}
 # In-cluster image build from GitHub (the workstation needs no .NET SDK or registry).
 # Rebuild after a code change:  oc start-build blocking-service -n blocking --follow
 apiVersion: image.openshift.io/v1
@@ -36,3 +37,4 @@ spec:
     limits: { memory: 2Gi }
   triggers:
     - type: ConfigChange
+{{- end }}

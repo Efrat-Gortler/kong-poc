@@ -1,16 +1,20 @@
-# Reduced profile for OpenShift Local (CRC) on a workstation.
-# Same features, fewer/smaller pods. Selected by `profile: small` in environments/<leg>.yaml.
+# Laptop profile (8 GB host, WSL capped at 5 GB): exactly ONE Kong gateway pod per leg,
+# no autoscaling (k3d runs without metrics-server), smallest sensible requests.
+# Test 12 (new pod gets full config) replaces the pod instead of scaling out.
 gateway:
+  replicaCount: 1
   autoscaling:
-    minReplicas: 1
-    maxReplicas: 2
+    enabled: false
+  podDisruptionBudget:
+    enabled: false
   resources:
-    requests: { cpu: 200m, memory: 512Mi }
-    limits: { memory: 1Gi }
+    requests: { cpu: 100m, memory: 320Mi }
+    limits: { memory: 768Mi }
   env:
     nginx_worker_processes: "1"
+    mem_cache_size: "64m"
 controller:
   ingressController:
     resources:
-      requests: { cpu: 50m, memory: 128Mi }
-      limits: { memory: 320Mi }
+      requests: { cpu: 50m, memory: 96Mi }
+      limits: { memory: 256Mi }

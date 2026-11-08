@@ -1,6 +1,7 @@
 # Overridden by ../../environments/<leg>.yaml (global.*) and values-<leg>.yaml
 global:
   leg: leg1
+  platform: openshift
   kong:
     ingressClass: kong-leg1
     gatewayClassName: kong-leg1

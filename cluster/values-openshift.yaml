@@ -1,0 +1,6 @@
+# Helm values merged into EVERY chart when platform=openshift.
+global:
+  platform: openshift
+  # OpenShift Local default; the infra team's cluster: its apps wildcard domain.
+  appsDomain: apps-crc.testing
+  ingressScheme: https

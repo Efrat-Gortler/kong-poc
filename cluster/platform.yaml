@@ -1,0 +1,6 @@
+# THE switch between platforms. Read by every ApplicationSet (git files generator).
+#   kubernetes : plain Kubernetes (k3d in WSL2 on the laptop)
+#   openshift  : OpenShift 4.19+ (OpenShift Local, or the infra team's cluster)
+# Moving to another cluster = change this value, set appsDomain in
+# cluster/values-<platform>.yaml, push.
+platform: kubernetes

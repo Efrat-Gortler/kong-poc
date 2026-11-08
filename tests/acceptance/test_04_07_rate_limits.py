@@ -5,7 +5,7 @@ import time
 import pytest
 import yaml
 
-from conftest import LEGS, REPO, redis_flush_matching
+from conftest import LEGS, REPO, redis_flush_matching, two_legs
 
 ENV = {leg: yaml.safe_load((REPO / "environments" / f"{leg}.yaml").read_text()) for leg in LEGS}
 USER_DB = ENV[LEGS[0]]["global"]["redis"]["userLimitDatabase"]
@@ -27,6 +27,7 @@ def wait_for_fresh_minute(margin: int = 15):
         time.sleep(60 - s + 1)
 
 
+@two_legs
 @pytest.mark.slow
 def test_04_route_limit_is_per_leg(gslb, record):
     limit = 20   # reports-limited: routeLimitPerMinute
@@ -43,6 +44,7 @@ def test_04_route_limit_is_per_leg(gslb, record):
     assert other_leg.status_code == 200, "route-wide limit leaked into the other leg"
 
 
+@two_legs
 def test_05_user_limit_shared_across_legs(gslb, tokens, record):
     limit = 10   # users-limited: userLimitPerMinute
     reset_user_counters("users-limited")

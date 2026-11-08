@@ -7,7 +7,7 @@ import http from 'k6/http';
 import { check } from 'k6';
 import exec from 'k6/execution';
 
-const GSLB = __ENV.GSLB_URL || 'https://gslb-gslb-sim.apps-crc.testing';
+const GSLB = __ENV.GSLB_URL || 'http://gslb-gslb-sim.localtest.me';   // run-blocking-comparison.sh passes the right one
 const MODE = __ENV.MODE || 'unknown';
 const TOKENS = (__ENV.TOKENS || __ENV.TOKEN || '').split(',').filter(Boolean);
 const RATE = parseInt(__ENV.RATE || '50', 10);         // requests per second (CRC-friendly)
@@ -30,7 +30,7 @@ export const options = {
 export function setup() {
   if (TOKENS.length > 0) return { tokens: TOKENS };
   // fetch tokens for several system clients so no single caller hits its per-user limit
-  const kc = __ENV.KEYCLOAK_URL || 'https://keycloak-idp.apps-crc.testing';
+  const kc = __ENV.KEYCLOAK_URL || 'http://keycloak-idp.localtest.me';
   const secret = __ENV.SYSTEM_CLIENT_SECRET;
   if (!secret) throw new Error('set TOKEN(S) or SYSTEM_CLIENT_SECRET');
   const clients = ['reports-service', 'billing-service'];

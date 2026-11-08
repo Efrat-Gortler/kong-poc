@@ -64,6 +64,7 @@ spec:
       annotations:
         checksum/config: {{ toYaml .Values.legs | sha256sum | trunc 12 }}
     spec:
+      {{- include "poc.podSecurityContext" . | nindent 6 }}
       containers:
         - name: haproxy
           image: {{ .Values.image }}
@@ -113,23 +114,7 @@ spec:
     - { name: http, port: 8080, targetPort: http }
     - { name: control, port: 8081, targetPort: control }
 ---
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: gslb
-spec:
-  host: {{ .Values.routeHost }}
-  to: { kind: Service, name: gslb }
-  port: { targetPort: http }
-  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
+{{ include "poc.expose" (list . "gslb" .Values.hostPrefix "gslb" "http") }}
 ---
 # POC only: the drain/ready API. In production this is the GSLB vendor's own console.
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: gslb-control
-spec:
-  host: {{ .Values.controlRouteHost }}
-  to: { kind: Service, name: gslb }
-  port: { targetPort: control }
-  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
+{{ include "poc.expose" (list . "gslb-control" .Values.controlHostPrefix "gslb" "control") }}

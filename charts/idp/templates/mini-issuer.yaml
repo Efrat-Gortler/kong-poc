@@ -1,0 +1,63 @@
+{{- if eq .Values.implementation "mini" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mini-issuer
+data:
+  mini_issuer.py: |
+{{ .Files.Get "files/mini_issuer.py" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak          # same name as the Keycloak Deployment: scripts and tests address one IdP
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/component: mini-issuer
+    app.kubernetes.io/part-of: kong-poc
+spec:
+  replicas: 1             # keys live in memory: one replica, one key set
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak
+        app.kubernetes.io/component: mini-issuer
+        app.kubernetes.io/part-of: kong-poc
+      annotations:
+        checksum/code: {{ print (.Files.Get "files/mini_issuer.py") (.Files.Get "files/realm-corp.json") (.Files.Get "files/realm-rogue.json") | sha256sum | trunc 12 }}
+    spec:
+      {{- include "poc.podSecurityContext" . | nindent 6 }}
+      containers:
+        - name: issuer
+          image: {{ .Values.mini.image }}
+          command: ["python", "-u", "/app/mini_issuer.py"]
+          env:
+            - { name: ISSUER_BASE, value: {{ .Values.internalUrl | quote }} }
+            - { name: REALM_DIR, value: /realms }
+            - { name: PORT, value: "8080" }
+          envFrom:
+            - secretRef: { name: {{ .Values.secrets.testCredentials }} }
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.mini.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: code, mountPath: /app, readOnly: true }
+            - { name: realms, mountPath: /realms, readOnly: true }
+      volumes:
+        - name: code
+          configMap: { name: mini-issuer }
+        - name: realms
+          configMap: { name: keycloak-realms }
+{{- end }}

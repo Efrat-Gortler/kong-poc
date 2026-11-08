@@ -1,5 +1,6 @@
 global:
   leg: leg1
+  platform: openshift
 
 enabled: true
 image: docker.io/openpolicyagent/opa:1.4.2-static

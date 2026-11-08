@@ -9,7 +9,7 @@ import pytest
 import requests
 import yaml
 
-from conftest import LEGS, REPO, gslb_control, oc, wait_until
+from conftest import KUBECTL, LEGS, REPO, gslb_control, oc, two_legs, wait_until
 
 
 def kong_pods() -> dict[str, str]:
@@ -65,6 +65,7 @@ def test_10_git_change_live_everywhere_without_restarts(gslb, record):
         git("push")
 
 
+@two_legs
 @pytest.mark.slow
 def test_11_drain_leg_traffic_continues_and_user_limit_exact(gslb, record):
     from test_04_07_rate_limits import reset_user_counters
@@ -105,7 +106,7 @@ def test_12_new_kong_pod_serves_full_config(gslb, tokens, record):
     pod = new_ready_pod()
     ready_after = time.monotonic() - t0
     # talk to the NEW pod directly: routes, auth and limits must already be there
-    pf = subprocess.Popen(["oc", "port-forward", "-n", leg, f"pod/{pod}", "18000:8000"],
+    pf = subprocess.Popen([KUBECTL, "port-forward", "-n", leg, f"pod/{pod}", "18000:8000"],
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         time.sleep(3)

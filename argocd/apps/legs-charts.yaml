@@ -1,7 +1,8 @@
-# Our own per-leg Helm charts, for every leg (environments/*.yaml) x every app below.
+# Our own per-leg Helm charts, for every ACTIVE leg x every app below.
 # Value files, in order (missing ones are skipped):
-#   values.yaml, values-<app>.yaml, values-profile-<profile>.yaml, values-<leg>.yaml,
-#   ../../environments/<leg>.yaml   (the leg's global identity)
+#   values.yaml, values-<app>.yaml, values-platform-<platform>.yaml, values-profile-<profile>.yaml,
+#   values-<leg>.yaml, cluster/values-<platform>.yaml (global.platform ...),
+#   environments/<leg>.yaml (global.leg ...)
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -16,19 +17,28 @@ spec:
           - git:
               repoURL: https://github.com/Efrat-Gortler/kong-poc.git
               revision: main
+              pathParamPrefix: cluster
               files:
-                - path: environments/*.yaml
-          - list:
-              elements:
-                - { app: kong-global, chart: kong-global }
-                - { app: opa,         chart: opa }
-                - { app: orders,      chart: mock-service }
-                - { app: reports,     chart: mock-service }
-                - { app: users,       chart: mock-service }
+                - path: cluster/platform.yaml
+          - matrix:
+              generators:
+                - git:
+                    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
+                    revision: main
+                    files:
+                      - path: environments/*.yaml
+                - list:
+                    elements:
+                      - { app: kong-global, chart: kong-global }
+                      - { app: opa, chart: opa }
+                      - { app: orders, chart: mock-service }
+                      - { app: reports, chart: mock-service }
+                      - { app: users, chart: mock-service }
   template:
     metadata:
       name: '{{ .leg }}-{{ .app }}'
       labels: { kong-poc/leg: '{{ .leg }}', kong-poc/app: '{{ .app }}' }
+      finalizers: [resources-finalizer.argocd.argoproj.io]
     spec:
       project: kong-poc
       source:
@@ -41,8 +51,10 @@ spec:
           valueFiles:
             - values.yaml
             - 'values-{{ .app }}.yaml'
+            - 'values-platform-{{ .platform }}.yaml'
             - 'values-profile-{{ .profile }}.yaml'
             - 'values-{{ .leg }}.yaml'
+            - '../../cluster/values-{{ .platform }}.yaml'
             - '../../environments/{{ .leg }}.yaml'
       destination:
         server: https://kubernetes.default.svc

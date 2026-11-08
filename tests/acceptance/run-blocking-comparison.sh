@@ -8,6 +8,7 @@ cd "$(dirname "$0")/../.."
 source scripts/lib.sh
 [[ "${ALLOW_GIT_PUSH:-0}" == "1" ]] || die "set ALLOW_GIT_PUSH=1 (this pushes commits that switch blocking.mode)"
 VALUES=charts/kong-global/values.yaml
+export GSLB_URL KEYCLOAK_URL   # from lib.sh (platform-aware), read by k6
 original="$(grep -E '^  mode:' "$VALUES" | awk '{print $2}')"
 
 set_mode() {

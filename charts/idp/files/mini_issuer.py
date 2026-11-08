@@ -1,0 +1,295 @@
+"""mini-issuer: a tiny OIDC token issuer for the Kong POC (Python standard library only).
+
+A light stand-in for Keycloak on small machines (~25 MB instead of ~600 MB). It reads
+the SAME realm files Keycloak imports (charts/idp/files/realm-*.json) and serves the
+same URL paths, so Kong, the blocking service, the scripts and the tests do not change:
+
+  GET  /realms/<realm>/.well-known/openid-configuration
+  GET  /realms/<realm>/protocol/openid-connect/certs           (JWKS)
+  POST /realms/<realm>/protocol/openid-connect/token           (password, client_credentials)
+  GET  /health/ready, /health/live
+
+Supported from the realm files: users (username, email, firstName, lastName, realmRoles,
+password), clients (secret, publicClient, directAccessGrantsEnabled,
+serviceAccountsEnabled, attribute access.token.lifespan) and the protocol mappers
+oidc-usermodel-property-mapper, oidc-audience-mapper, oidc-usermodel-realm-role-mapper,
+oidc-hardcoded-claim-mapper. ${ENV_VAR} placeholders are resolved from the environment.
+
+Signing: RS256 with a 2048-bit RSA key generated per realm at startup (in memory only,
+so a restart rotates keys; Kong and ASP.NET re-fetch the JWKS on an unknown kid).
+NOT for production: no refresh tokens, no login UI, no rate limiting.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import json
+import os
+import re
+import secrets
+import sys
+import time
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, unquote
+
+ISSUER_BASE = os.environ.get("ISSUER_BASE", "http://keycloak.idp.svc.cluster.local:8080").rstrip("/")
+REALM_DIR = os.environ.get("REALM_DIR", "/realms")
+PORT = int(os.environ.get("PORT", "8080"))
+KEY_BITS = int(os.environ.get("KEY_BITS", "2048"))
+
+# ----------------------------------------------------------------------------- RSA (RS256)
+_SMALL_PRIMES = [p for p in range(3, 2000, 2) if all(p % d for d in range(3, int(p ** 0.5) + 1, 2))]
+
+
+def _is_probable_prime(n: int, rounds: int = 40) -> bool:
+    if n < 2:
+        return False
+    for p in _SMALL_PRIMES:
+        if n % p == 0:
+            return n == p
+    d, s = n - 1, 0
+    while d % 2 == 0:
+        d //= 2
+        s += 1
+    for _ in range(rounds):
+        a = secrets.randbelow(n - 3) + 2
+        x = pow(a, d, n)
+        if x in (1, n - 1):
+            continue
+        for _ in range(s - 1):
+            x = pow(x, 2, n)
+            if x == n - 1:
+                break
+        else:
+            return False
+    return True
+
+
+def _random_prime(bits: int) -> int:
+    while True:
+        c = secrets.randbits(bits) | (1 << (bits - 1)) | (1 << (bits - 2)) | 1
+        if _is_probable_prime(c):
+            return c
+
+
+def generate_rsa(bits: int = KEY_BITS, e: int = 65537) -> dict:
+    while True:
+        p, q = _random_prime(bits // 2), _random_prime(bits // 2)
+        if p == q:
+            continue
+        n, phi = p * q, (p - 1) * (q - 1)
+        if n.bit_length() != bits or phi % e == 0:
+            continue
+        return {"n": n, "e": e, "d": pow(e, -1, phi)}
+
+
+_SHA256_DIGEST_INFO = bytes.fromhex("3031300d060960864801650304020105000420")
+
+
+def rs256_sign(key: dict, data: bytes) -> bytes:
+    """RSASSA-PKCS1-v1_5 with SHA-256 (RFC 8017 section 8.2)."""
+    k = (key["n"].bit_length() + 7) // 8
+    t = _SHA256_DIGEST_INFO + hashlib.sha256(data).digest()
+    em = b"\x00\x01" + b"\xff" * (k - len(t) - 3) + b"\x00" + t
+    return pow(int.from_bytes(em, "big"), key["d"], key["n"]).to_bytes(k, "big")
+
+
+def b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def b64url_int(i: int) -> str:
+    return b64url(i.to_bytes((i.bit_length() + 7) // 8, "big"))
+
+
+# ----------------------------------------------------------------------------- realms
+_PLACEHOLDER = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _resolve(text: str) -> str:
+    def sub(m):
+        if m.group(1) not in os.environ:
+            sys.exit(f"mini-issuer: environment variable {m.group(1)} is not set")
+        return os.environ[m.group(1)]
+    return _PLACEHOLDER.sub(sub, text)
+
+
+class Realm:
+    def __init__(self, doc: dict):
+        self.name = doc["realm"]
+        self.issuer = f"{ISSUER_BASE}/realms/{self.name}"
+        self.lifespan = int(doc.get("accessTokenLifespan", 300))
+        self.users = {u["username"]: u for u in doc.get("users", []) if u.get("enabled", True)}
+        self.clients = {c["clientId"]: c for c in doc.get("clients", []) if c.get("enabled", True)}
+        t0 = time.time()
+        self.key = generate_rsa()
+        self.kid = b64url(hashlib.sha256(str(self.key["n"]).encode()).digest()[:12])
+        print(f"mini-issuer: realm {self.name}: {len(self.users)} users, {len(self.clients)} clients, "
+              f"key {self.kid} ({time.time() - t0:.1f}s)", flush=True)
+
+    # --- documents
+    def discovery(self) -> dict:
+        base = f"{self.issuer}/protocol/openid-connect"
+        return {
+            "issuer": self.issuer,
+            "authorization_endpoint": f"{base}/auth",
+            "token_endpoint": f"{base}/token",
+            "jwks_uri": f"{base}/certs",
+            "response_types_supported": ["code", "token"],
+            "subject_types_supported": ["public"],
+            "id_token_signing_alg_values_supported": ["RS256"],
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+            "grant_types_supported": ["password", "client_credentials"],
+            "claims_supported": ["sub", "iss", "aud", "exp", "iat", "upn", "caller_id", "roles"],
+        }
+
+    def jwks(self) -> dict:
+        return {"keys": [{"kty": "RSA", "use": "sig", "alg": "RS256", "kid": self.kid,
+                          "n": b64url_int(self.key["n"]), "e": b64url_int(self.key["e"])}]}
+
+    # --- tokens
+    def _check_secret(self, client: dict, secret: str | None) -> bool:
+        if client.get("publicClient"):
+            return True
+        expected = client.get("secret", "")
+        return bool(secret) and bool(expected) and hmac.compare_digest(secret, expected)
+
+    def issue(self, form: dict, basic: tuple[str, str] | None) -> tuple[int, dict]:
+        grant = form.get("grant_type")
+        client_id = form.get("client_id") or (basic[0] if basic else None)
+        secret = form.get("client_secret") or (basic[1] if basic else None)
+        client = self.clients.get(client_id or "")
+        if not client or not self._check_secret(client, secret):
+            return 401, {"error": "invalid_client", "error_description": "Invalid client or Invalid client credentials"}
+
+        user = None
+        if grant == "password":
+            if not client.get("directAccessGrantsEnabled"):
+                return 400, {"error": "unauthorized_client", "error_description": "Client not allowed for direct access grants"}
+            user = self.users.get(form.get("username", ""))
+            password = form.get("password", "")
+            stored = next((c.get("value", "") for c in (user or {}).get("credentials", []) if c.get("type") == "password"), "")
+            if not user or not stored or not hmac.compare_digest(password, stored):
+                return 401, {"error": "invalid_grant", "error_description": "Invalid user credentials"}
+        elif grant == "client_credentials":
+            if not client.get("serviceAccountsEnabled"):
+                return 400, {"error": "unauthorized_client", "error_description": "Client not enabled to retrieve service account"}
+        else:
+            return 400, {"error": "unsupported_grant_type"}
+
+        lifespan = int((client.get("attributes") or {}).get("access.token.lifespan") or self.lifespan)
+        now = int(time.time())
+        subject = user["username"] if user else f"service-account-{client_id}"
+        claims = {
+            "exp": now + lifespan, "iat": now, "jti": str(uuid.uuid4()), "iss": self.issuer,
+            "sub": str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.issuer}/{subject}")),
+            "typ": "Bearer", "azp": client_id, "scope": "openid" if user else "profile",
+            "preferred_username": subject,
+        }
+        audiences: list[str] = []
+        for m in client.get("protocolMappers", []):
+            cfg = m.get("config", {})
+            if cfg.get("access.token.claim", "true") != "true":
+                continue
+            kind = m.get("protocolMapper")
+            if kind == "oidc-audience-mapper" and cfg.get("included.custom.audience"):
+                audiences.append(cfg["included.custom.audience"])
+            elif kind == "oidc-hardcoded-claim-mapper":
+                claims[cfg["claim.name"]] = cfg.get("claim.value")
+            elif kind == "oidc-usermodel-property-mapper" and user:
+                value = user.get(cfg.get("user.attribute", ""))
+                if value is not None:
+                    claims[cfg["claim.name"]] = value
+            elif kind == "oidc-usermodel-realm-role-mapper" and user:
+                claims[cfg.get("claim.name", "roles")] = list(user.get("realmRoles", []))
+        if audiences:
+            claims["aud"] = audiences[0] if len(audiences) == 1 else audiences
+
+        header = {"alg": "RS256", "typ": "JWT", "kid": self.kid}
+        signing_input = f"{b64url(json.dumps(header, separators=(',', ':')).encode())}." \
+                        f"{b64url(json.dumps(claims, separators=(',', ':')).encode())}"
+        token = f"{signing_input}.{b64url(rs256_sign(self.key, signing_input.encode()))}"
+        return 200, {"access_token": token, "expires_in": lifespan, "token_type": "Bearer",
+                     "not-before-policy": 0, "scope": claims["scope"]}
+
+
+def load_realms(directory: str) -> dict[str, Realm]:
+    realms = {}
+    for name in sorted(os.listdir(directory)):
+        if name.endswith(".json"):
+            with open(os.path.join(directory, name), encoding="utf-8") as f:
+                realm = Realm(json.loads(_resolve(f.read())))
+            realms[realm.name] = realm
+    if not realms:
+        sys.exit(f"mini-issuer: no realm files in {directory}")
+    return realms
+
+
+# ----------------------------------------------------------------------------- HTTP
+ROUTE = re.compile(r"^/realms/([^/]+)/(\.well-known/openid-configuration|protocol/openid-connect/(certs|token))$")
+
+
+def make_handler(realms: dict[str, Realm]):
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "mini-issuer"
+
+        def _send(self, status: int, body: dict, cache: bool = False):
+            data = json.dumps(body).encode()
+            self.send_response(status)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.send_header("cache-control", "public, max-age=60" if cache else "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _route(self):
+            path = self.path.split("?", 1)[0]
+            if path in ("/health/ready", "/health/live", "/healthz"):
+                return None, "health"
+            m = ROUTE.match(path)
+            if not m or unquote(m.group(1)) not in realms:
+                return None, None
+            return realms[unquote(m.group(1))], m.group(3) or "discovery"
+
+        def do_GET(self):
+            realm, what = self._route()
+            if what == "health":
+                return self._send(200, {"status": "UP"})
+            if what == "discovery":
+                return self._send(200, realm.discovery(), cache=True)
+            if what == "certs":
+                return self._send(200, realm.jwks(), cache=True)
+            self._send(404, {"error": "not found"})
+
+        def do_POST(self):
+            realm, what = self._route()
+            if what != "token":
+                return self._send(404, {"error": "not found"})
+            length = int(self.headers.get("content-length") or 0)
+            form = {k: v[0] for k, v in parse_qs(self.rfile.read(length).decode()).items()}
+            basic = None
+            auth = self.headers.get("authorization", "")
+            if auth.lower().startswith("basic "):
+                try:
+                    user, _, pw = base64.b64decode(auth[6:]).decode().partition(":")
+                    basic = (unquote(user), unquote(pw))
+                except ValueError:
+                    pass
+            status, body = realm.issue(form, basic)
+            self._send(status, body)
+
+        def log_message(self, fmt, *args):
+            if self.command == "POST":   # log token requests only (no secrets in the line)
+                print("mini-issuer:", self.address_string(), self.command, self.path.split("?")[0],
+                      args[1] if len(args) > 1 else "", flush=True)
+
+    return Handler
+
+
+if __name__ == "__main__":
+    realms = load_realms(REALM_DIR)
+    ThreadingHTTPServer.daemon_threads = True
+    print(f"mini-issuer: listening on :{PORT}, issuer base {ISSUER_BASE}", flush=True)
+    ThreadingHTTPServer(("0.0.0.0", PORT), make_handler(realms)).serve_forever()

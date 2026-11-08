@@ -1,0 +1,8 @@
+# OpenShift assigns UIDs through the SCC (restricted-v2); the chart's fixed
+# runAsUser 1000 would be rejected, so the chart's security contexts are switched off.
+controller:
+  containerSecurityContext:
+    enabled: false
+gateway:
+  containerSecurityContext:
+    enabled: false

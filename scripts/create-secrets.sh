@@ -67,4 +67,11 @@ else
   warn "GITHUB_TOKEN not set: skipped ArgoCD repo secret and build source secret (fine if the repo is public)"
 fi
 
+# Optional: pull secret for a private GHCR package (kubernetes platform)
+if [[ -n "${GHCR_PULL_TOKEN:-}" ]] && ! oc get secret ghcr-pull -n blocking >/dev/null 2>&1; then
+  oc create secret docker-registry ghcr-pull -n blocking --docker-server=ghcr.io \
+    --docker-username="${GHCR_USER:-git}" --docker-password="$GHCR_PULL_TOKEN" >/dev/null
+  log "create blocking/ghcr-pull  (set image.pullSecret: ghcr-pull in charts/blocking-service)"
+fi
+
 log "done. Read a value with: oc get secret <name> -n <ns> -o jsonpath='{.data.<key>}' | base64 -d"

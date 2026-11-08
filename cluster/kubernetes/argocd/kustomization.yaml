@@ -1,0 +1,60 @@
+# Minimal Argo CD for plain Kubernetes (laptop): the upstream "core" install -
+# application controller, ApplicationSet controller, repo server, redis.
+# No UI/API server, no Dex, no notifications. Use the CLI (`argocd --core`) or kubectl.
+#
+# Installed into namespace "openshift-gitops" on purpose: every Application in
+# argocd/ uses that namespace, so the same manifests work on OpenShift (where the
+# OpenShift GitOps operator owns it) and here.
+#
+#   kubectl apply --server-side -k cluster/kubernetes/argocd
+#   kubectl apply -n openshift-gitops -f cluster/kubernetes/argocd/default-project.yaml   (after the CRDs exist)
+# scripts/bootstrap.sh does both.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: openshift-gitops
+resources:
+  - namespace.yaml
+  - https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.7/manifests/core-install.yaml
+patches:
+  # cluster-wide permissions of the controller point at the new namespace
+  - target: { kind: ClusterRoleBinding, name: argocd-application-controller }
+    patch: |-
+      - op: replace
+        path: /subjects/0/namespace
+        value: openshift-gitops
+  # memory caps for an 8 GB laptop
+  - target: { kind: StatefulSet, name: argocd-application-controller }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value: { requests: { cpu: 100m, memory: 192Mi }, limits: { memory: 448Mi } }
+  - target: { kind: Deployment, name: argocd-repo-server }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value: { requests: { cpu: 50m, memory: 96Mi }, limits: { memory: 320Mi } }
+  - target: { kind: Deployment, name: argocd-applicationset-controller }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value: { requests: { cpu: 20m, memory: 48Mi }, limits: { memory: 128Mi } }
+  - target: { kind: Deployment, name: argocd-redis }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value: { requests: { cpu: 10m, memory: 24Mi }, limits: { memory: 96Mi } }
+  # fewer workers and slower polling than the defaults (POC scale)
+  - target: { kind: ConfigMap, name: argocd-cmd-params-cm }
+    patch: |-
+      - op: add
+        path: /data
+        value:
+          controller.status.processors: "5"
+          controller.operation.processors: "3"
+          reposerver.parallelism.limit: "2"
+  - target: { kind: ConfigMap, name: argocd-cm }
+    patch: |-
+      - op: add
+        path: /data
+        value:
+          timeout.reconciliation: 120s

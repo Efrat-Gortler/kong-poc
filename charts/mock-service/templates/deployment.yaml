@@ -29,6 +29,7 @@ spec:
       annotations:
         checksum/code: {{ .Files.Get "files/echo.py" | sha256sum | trunc 12 }}
     spec:
+      {{- include "poc.podSecurityContext" . | nindent 6 }}
       containers:
         - name: echo
           image: {{ .Values.image }}

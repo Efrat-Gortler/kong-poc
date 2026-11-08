@@ -1,5 +1,6 @@
 global:
   leg: leg1
+  platform: openshift
   kong:
     gatewayName: kong
   redis:

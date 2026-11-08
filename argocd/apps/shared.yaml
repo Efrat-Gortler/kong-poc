@@ -1,4 +1,5 @@
 # Cluster-wide and shared components (one instance, not per leg).
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -10,7 +11,6 @@ spec:
   project: kong-poc
   source:
     # Kong CRDs (KongPlugin, KongClusterPlugin, ...) matching KIC 3.5.14.
-    # Gateway API CRDs are NOT installed: OpenShift 4.19+ manages them itself.
     repoURL: https://github.com/Kong/kubernetes-ingress-controller
     targetRevision: v3.5.14
     path: config/crd
@@ -20,69 +20,91 @@ spec:
     automated: { prune: false, selfHeal: true }
     syncOptions: [ServerSideApply=true]
 ---
+# Gateway API CRDs: OpenShift 4.19+ manages them itself (and blocks others from doing so),
+# so they are installed by us only when platform=kubernetes.
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: redis
+  name: platform-kubernetes
   namespace: openshift-gitops
 spec:
-  project: kong-poc
-  source:
-    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
-    targetRevision: main
-    path: charts/redis
-  destination: { server: https://kubernetes.default.svc, namespace: gw-shared }
-  syncPolicy:
-    automated: { prune: true, selfHeal: true }
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/Efrat-Gortler/kong-poc.git
+        revision: main
+        files:
+          - path: cluster/platform.yaml
+      selector:
+        matchLabels:
+          platform: kubernetes
+  template:
+    metadata:
+      name: gateway-api-crds
+    spec:
+      project: kong-poc
+      source:
+        repoURL: https://github.com/kubernetes-sigs/gateway-api
+        targetRevision: v1.6.2
+        path: config/crd/standard
+      destination:
+        server: https://kubernetes.default.svc
+      syncPolicy:
+        automated: { prune: false, selfHeal: true }
+        syncOptions: [ServerSideApply=true]
 ---
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: idp
+  name: shared
   namespace: openshift-gitops
 spec:
-  project: kong-poc
-  source:
-    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
-    targetRevision: main
-    path: charts/idp
-  destination: { server: https://kubernetes.default.svc, namespace: idp }
-  syncPolicy:
-    automated: { prune: true, selfHeal: true }
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: blocking-service
-  namespace: openshift-gitops
-spec:
-  project: kong-poc
-  source:
-    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
-    targetRevision: main
-    path: charts/blocking-service
-  destination: { server: https://kubernetes.default.svc, namespace: blocking }
-  # The image trigger rewrites the image field to the built digest.
-  ignoreDifferences:
-    - group: apps
-      kind: Deployment
-      name: blocking-service
-      jqPathExpressions: [".spec.template.spec.containers[].image"]
-  syncPolicy:
-    automated: { prune: true, selfHeal: true }
-    syncOptions: [RespectIgnoreDifferences=true]
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: gslb-sim
-  namespace: openshift-gitops
-spec:
-  project: kong-poc
-  source:
-    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
-    targetRevision: main
-    path: charts/gslb-sim
-  destination: { server: https://kubernetes.default.svc, namespace: gslb-sim }
-  syncPolicy:
-    automated: { prune: true, selfHeal: true }
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  # test 9 pauses self-heal on single apps while it scales them down; keep that edit
+  ignoreApplicationDifferences:
+    - jsonPointers: [/spec/syncPolicy]
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/Efrat-Gortler/kong-poc.git
+              revision: main
+              files:
+                - path: cluster/platform.yaml
+          - list:
+              elements:
+                - { app: redis, namespace: gw-shared }
+                - { app: idp, namespace: idp }
+                - { app: blocking-service, namespace: blocking }
+                - { app: gslb-sim, namespace: gslb-sim }
+  template:
+    metadata:
+      name: '{{ .app }}'
+      labels: { kong-poc/app: '{{ .app }}' }
+      finalizers: [resources-finalizer.argocd.argoproj.io]
+    spec:
+      project: kong-poc
+      source:
+        repoURL: https://github.com/Efrat-Gortler/kong-poc.git
+        targetRevision: main
+        path: 'charts/{{ .app }}'
+        helm:
+          ignoreMissingValueFiles: true
+          valueFiles:
+            - values.yaml
+            - 'values-platform-{{ .platform }}.yaml'
+            - '../../cluster/values-{{ .platform }}.yaml'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      # OpenShift: the image trigger rewrites the blocking-service image to the built digest.
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          name: blocking-service
+          jqPathExpressions: [".spec.template.spec.containers[].image"]
+      syncPolicy:
+        automated: { prune: true, selfHeal: true }
+        syncOptions: [RespectIgnoreDifferences=true]

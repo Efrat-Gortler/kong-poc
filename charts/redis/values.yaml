@@ -1,3 +1,6 @@
+global:
+  platform: openshift
+
 image: docker.io/library/redis:7.4.2
 passwordSecret: redis-auth     # Secret in this namespace, key: password (created by scripts/create-secrets.sh)
 # DB 0 = per-user counters shared by all legs; DB 1..N = route-wide counters, one per leg.

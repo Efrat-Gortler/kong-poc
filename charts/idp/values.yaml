@@ -1,12 +1,30 @@
-image: quay.io/keycloak/keycloak:26.0.7
+global:
+  platform: openshift
+  appsDomain: apps-crc.testing
+
+# keycloak : Keycloak 26 in dev mode (~600 MB) - closest to a real IdP, has an admin console
+# mini     : files/mini_issuer.py (~25 MB) - same realm files, same URLs, tokens only
+# Default per platform in values-platform-<platform>.yaml.
+implementation: keycloak
+
 # The issuer is pinned to the in-cluster URL, so tokens fetched through the external
-# Route carry the same `iss` that Kong (inside the cluster) validates.
+# host carry the same `iss` that Kong (inside the cluster) validates.
+# The Service is called "keycloak" for both implementations.
 internalUrl: http://keycloak.idp.svc.cluster.local:8080
-# External host for the admin console and for fetching tokens from a workstation.
-routeHost: keycloak-idp.apps-crc.testing
+hostPrefix: keycloak-idp        # external host: <hostPrefix>.<global.appsDomain>
+
 secrets:
-  admin: keycloak-admin              # keys: username, password
+  admin: keycloak-admin                  # keys: username, password (keycloak only)
   testCredentials: idp-test-credentials  # keys: KC_TEST_USER_PASSWORD, KC_SYSTEM_CLIENT_SECRET
-resources:
-  requests: { cpu: 250m, memory: 512Mi }
-  limits: { memory: 1Gi }
+
+keycloak:
+  image: quay.io/keycloak/keycloak:26.0.7
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+
+mini:
+  image: docker.io/library/python:3.12.8-slim
+  resources:
+    requests: { cpu: 10m, memory: 24Mi }
+    limits: { memory: 96Mi }
