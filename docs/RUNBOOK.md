@@ -5,7 +5,7 @@ Secrets are only ever in environment variables or OpenShift Secrets.
 
 ## Two ways to run it
 
-| | Laptop (current) | OpenShift (infra cluster, or OpenShift Local) |
+| | Laptop | OpenShift (GCP VM with OpenShift Local — current — or the infra cluster) |
 |---|---|---|
 | `cluster/platform.yaml` | `platform: kubernetes` | `platform: openshift` + `appsDomain` in `cluster/values-openshift.yaml` |
 | Cluster | k3d (k3s 1.35) in WSL2, Docker Engine | OpenShift 4.19+ |
@@ -16,6 +16,29 @@ Secrets are only ever in environment variables or OpenShift Secrets.
 | Bootstrap | `scripts/k3d/cluster.sh create` then `scripts/bootstrap.sh` | `scripts/bootstrap.sh` |
 
 Everything else (charts, plugins, tests) is the same.
+
+## GCP path — OpenShift Local on a Google Cloud VM (current)
+
+`cluster/platform.yaml`: `platform: openshift`. Both legs active. Free Trial credit; the VM stops itself at 22:00.
+
+| Where | What |
+|---|---|
+| Google Cloud Shell | creates and drives the VM (`scripts/gcp/*.sh`) |
+| VM `kong-poc-crc` (n2-standard-8, CentOS Stream 9) | OpenShift Local 2.63 (7 vCPU / 26 GiB), HAProxy publishing 80/443/6443, `oc`, `helm`, `gh`, test venv |
+| Your Windows browser | console and POC routes, via hosts entries (`scripts/windows/hosts-crc.cmd`) |
+
+1. **Cloud Shell:** `git clone https://github.com/Efrat-Gortler/kong-poc.git && cd kong-poc`
+   (or upload `kong-poc.bundle` and `git clone kong-poc.bundle kong-poc`).
+2. **Pull secret:** Cloud Shell menu ⋮ → *Upload* → the Red Hat pull secret, then `mv ~/pull-secret* ~/pull-secret.txt`.
+3. **VM:** `ALLOW_IP=<your public IP> bash scripts/gcp/create-vm.sh` (~5 min).
+4. **OpenShift Local:** `bash scripts/gcp/vm.sh setup` (30–40 min, mostly waiting).
+5. **Windows hosts entries (admin, once):** run `scripts/windows/hosts-crc.cmd` that Claude generates with the VM IP.
+6. **Bootstrap (on the VM):** `bash scripts/gcp/vm.sh ssh`, then in `~/kong-poc`:
+   `oc login -u kubeadmin https://api.crc.testing:6443` (password: `crc console --credentials`),
+   `read -rs KONNECT_TOKEN && export KONNECT_TOKEN`, `gh auth login`, `scripts/bootstrap.sh`.
+7. **Tests (on the VM):** `~/.venv/bin/pytest tests/acceptance -v`.
+8. **Daily:** `bash scripts/gcp/vm.sh start` in the morning (OpenShift is back ~5 min later); it stops at 22:00
+   by itself, or `bash scripts/gcp/vm.sh stop`.
 
 ## Laptop path — WSL2 + k3d (8 GB machine)
 

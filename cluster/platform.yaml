@@ -3,4 +3,4 @@
 #   openshift  : OpenShift 4.19+ (OpenShift Local, or the infra team's cluster)
 # Moving to another cluster = change this value, set appsDomain in
 # cluster/values-<platform>.yaml, push.
-platform: kubernetes
+platform: openshift
