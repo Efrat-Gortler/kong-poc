@@ -10,7 +10,7 @@ spec:
   goTemplateOptions: ["missingkey=error"]
   generators:
     - git:
-        repoURL: https://github.com/khibye/kong-poc.git
+        repoURL: https://github.com/Efrat-Gortler/kong-poc.git
         revision: main
         files:
           - path: environments/*.yaml
@@ -31,7 +31,7 @@ spec:
               - $values/charts/kong-values/values.yaml
               - '$values/charts/kong-values/values-profile-{{ .profile }}.yaml'
               - '$values/charts/kong-values/values-{{ .leg }}.yaml'
-        - repoURL: https://github.com/khibye/kong-poc.git
+        - repoURL: https://github.com/Efrat-Gortler/kong-poc.git
           targetRevision: main
           ref: values
       destination:

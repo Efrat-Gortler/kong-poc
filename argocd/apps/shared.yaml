@@ -28,7 +28,7 @@ metadata:
 spec:
   project: kong-poc
   source:
-    repoURL: https://github.com/khibye/kong-poc.git
+    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
     targetRevision: main
     path: charts/redis
   destination: { server: https://kubernetes.default.svc, namespace: gw-shared }
@@ -43,7 +43,7 @@ metadata:
 spec:
   project: kong-poc
   source:
-    repoURL: https://github.com/khibye/kong-poc.git
+    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
     targetRevision: main
     path: charts/idp
   destination: { server: https://kubernetes.default.svc, namespace: idp }
@@ -58,7 +58,7 @@ metadata:
 spec:
   project: kong-poc
   source:
-    repoURL: https://github.com/khibye/kong-poc.git
+    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
     targetRevision: main
     path: charts/blocking-service
   destination: { server: https://kubernetes.default.svc, namespace: blocking }
@@ -80,7 +80,7 @@ metadata:
 spec:
   project: kong-poc
   source:
-    repoURL: https://github.com/khibye/kong-poc.git
+    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
     targetRevision: main
     path: charts/gslb-sim
   destination: { server: https://kubernetes.default.svc, namespace: gslb-sim }

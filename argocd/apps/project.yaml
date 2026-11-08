@@ -8,7 +8,7 @@ metadata:
 spec:
   description: Kong Enterprise POC (option C - Git + KIC + blocking service)
   sourceRepos:
-    - https://github.com/khibye/kong-poc.git
+    - https://github.com/Efrat-Gortler/kong-poc.git
     - https://charts.konghq.com
     - https://github.com/Kong/kubernetes-ingress-controller
   destinations:

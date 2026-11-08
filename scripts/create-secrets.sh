@@ -44,7 +44,7 @@ ensure_secret idp idp-test-credentials \
 
 # GitHub access for ArgoCD and for the BuildConfig (private repo)
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  REPO_URL="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || echo https://github.com/khibye/kong-poc.git)"
+  REPO_URL="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || grep -m1 -oE "https://github.com/[^ ]+\.git" "$REPO_ROOT/argocd/root.yaml")"
   REPO_URL="${REPO_URL%.git}.git"
   if ! oc get secret repo-kong-poc -n openshift-gitops >/dev/null 2>&1; then
     oc create secret generic repo-kong-poc -n openshift-gitops \

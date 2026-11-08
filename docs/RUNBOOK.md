@@ -29,7 +29,7 @@ Profile per leg: `profile:` in `environments/<leg>.yaml`. Cluster monitoring is 
 ## Phase 1 — prerequisites and repo
 
 ```bash
-git clone https://github.com/khibye/kong-poc.git && cd kong-poc
+git clone https://github.com/Efrat-Gortler/kong-poc.git && cd kong-poc
 scripts/render-all.sh          # every chart, every leg, as ArgoCD layers it -> rendered/
 ```
 **Check:** "all rendered". Look at `rendered/leg1/kong.yaml` for `KONG_PLUGINS` containing `blocklist`.

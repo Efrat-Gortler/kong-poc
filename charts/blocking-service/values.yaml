@@ -1,5 +1,5 @@
 build:
-  gitUri: https://github.com/khibye/kong-poc.git
+  gitUri: https://github.com/Efrat-Gortler/kong-poc.git
   gitRef: main
   contextDir: services/blocking-service
   sourceSecret: github-source       # basic-auth Secret (GitHub token) for the private repo

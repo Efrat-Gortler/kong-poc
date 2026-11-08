@@ -14,7 +14,7 @@ spec:
     - matrix:
         generators:
           - git:
-              repoURL: https://github.com/khibye/kong-poc.git
+              repoURL: https://github.com/Efrat-Gortler/kong-poc.git
               revision: main
               files:
                 - path: environments/*.yaml
@@ -32,7 +32,7 @@ spec:
     spec:
       project: kong-poc
       source:
-        repoURL: https://github.com/khibye/kong-poc.git
+        repoURL: https://github.com/Efrat-Gortler/kong-poc.git
         targetRevision: main
         path: 'charts/{{ .chart }}'
         helm:
