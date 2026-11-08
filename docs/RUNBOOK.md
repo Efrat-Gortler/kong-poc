@@ -25,6 +25,8 @@ Secrets are only ever in environment variables or OpenShift Secrets.
 | `full` | 10 vCPU, 28 GiB, 100 GB | ≥ 12 cores, ≥ 48 GB RAM | 2 (HPA 2–5) |
 
 Profile per leg: `profile:` in `environments/<leg>.yaml`. Cluster monitoring is off in both (saves ~4 GiB).
+On Windows, OpenShift Local needs Hyper-V, so **Windows Pro, Enterprise or Education** — not Home.
+If no workstation fits, ask for a test cluster: [CLUSTER-REQUEST.md](CLUSTER-REQUEST.md).
 
 ## Phase 1 — prerequisites and repo
 
