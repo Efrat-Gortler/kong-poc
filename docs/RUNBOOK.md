@@ -3,6 +3,58 @@
 Commands in order. Each phase ends with a check; don't continue until it passes.
 Secrets are only ever in environment variables or OpenShift Secrets.
 
+## Two ways to run it
+
+| | Laptop (current) | OpenShift (infra cluster, or OpenShift Local) |
+|---|---|---|
+| `cluster/platform.yaml` | `platform: kubernetes` | `platform: openshift` + `appsDomain` in `cluster/values-openshift.yaml` |
+| Cluster | k3d (k3s 1.35) in WSL2, Docker Engine | OpenShift 4.19+ |
+| Exposure | Ingress (Traefik) on `http://*.localtest.me` | Routes on `https://*.<appsDomain>` |
+| GitOps | Argo CD 3.5.7 core (no UI), namespace `openshift-gitops` | OpenShift GitOps operator |
+| Token issuer | `mini` (charts/idp/files/mini_issuer.py) | Keycloak |
+| Blocking service image | GitHub Actions → `ghcr.io` | BuildConfig in the cluster |
+| Bootstrap | `scripts/k3d/cluster.sh create` then `scripts/bootstrap.sh` | `scripts/bootstrap.sh` |
+
+Everything else (charts, plugins, tests) is the same.
+
+## Laptop path — WSL2 + k3d (8 GB machine)
+
+Memory budget: WSL is capped at 5 GB (`%USERPROFILE%\.wslconfig`). One leg ≈ 1.6 GB of pods,
+the second leg ≈ +0.6 GB. Close Chrome, Steam, BlueStacks and WhatsApp before steps marked **[heavy]**.
+
+0. **Windows (admin + reboot, once):** double-click `scripts/windows/install-wsl.cmd`, restart,
+   open *Ubuntu 24.04* once and choose a Linux user name and password.
+1. **Repo into WSL** (in Ubuntu; the bundle is the file Claude saved into your Windows folder):
+   ```bash
+   W="/mnt/c/Users/<you>/Desktop/<folder>"
+   git clone -b main "$W/kong-poc.bundle" ~/kong-poc && cd ~/kong-poc
+   git remote set-url origin https://github.com/Efrat-Gortler/kong-poc.git
+   export POC_LOG_DIR="$W/logs"           # every script also writes its output there
+   ```
+2. **Tools:** `bash scripts/wsl/setup-tools.sh` (asks for the Linux password). Close and reopen Ubuntu.
+3. **GitHub login (pushes from WSL):** `gh auth login` (GitHub.com → HTTPS → browser), then `gh auth setup-git`,
+   then `git push origin main`. Later updates from Claude: `scripts/sync-from-claude.sh "$W/kong-poc.bundle"`.
+4. **[heavy] Cluster:** `scripts/k3d/cluster.sh create` (pulls k3s, ~1 min).
+5. **[heavy] Bootstrap:** `read -rs KONNECT_TOKEN && export KONNECT_TOKEN` then `scripts/bootstrap.sh`
+   (Argo CD, namespaces, Secrets, Konnect for the active legs, root app). Watch:
+   `kubectl get applications -n openshift-gitops -w`.
+6. **Check:** `curl -s http://gslb-gslb-sim.localtest.me/orders/1` → 401;
+   `T=$(scripts/get-token.sh normaluser); curl -s -H "Authorization: Bearer $T" http://gslb-gslb-sim.localtest.me/orders/1`.
+   Swagger: http://blocking-blocking.localtest.me/swagger (from the Windows browser too).
+7. **Tests, one leg:** `python3 -m venv ~/.venv && ~/.venv/bin/pip install -r tests/acceptance/requirements.txt`,
+   then `~/.venv/bin/pytest tests/acceptance -v` (2-leg tests are skipped).
+8. **[heavy] Multi-leg tests:** `scripts/leg.sh up leg2`, run the tests again, `scripts/leg.sh down leg2`.
+9. **Pause / resume:** `scripts/k3d/cluster.sh stop` frees the memory; `start` brings it all back.
+
+The blocking service image: the first push to GitHub triggers `.github/workflows/blocking-service-image.yml`.
+If the GHCR package is private, either make it public (GitHub → Packages → kong-poc/blocking-service →
+Package settings) or `export GHCR_PULL_TOKEN=<read:packages token>` before `scripts/create-secrets.sh` and set
+`image.pullSecret: ghcr-pull` in `charts/blocking-service/values.yaml`.
+
+---
+
+# OpenShift path
+
 ## Phase 0 — workstation and OpenShift Local
 
 1. Hardware check (see "Profiles" below). Install: `crc` (OpenShift Local), `oc`, `helm`, `git`, `jq`, `openssl`,

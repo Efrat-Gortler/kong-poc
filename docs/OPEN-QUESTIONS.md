@@ -31,6 +31,16 @@ Each item: what the POC assumed, and what must be checked.
 - [ ] Konnect KIC hostname for the EU region (`eu.kic.api.konghq.com` assumed; checked by konnect-setup.sh).
 - [ ] NuGet package versions for .NET 10 (`Swashbuckle.AspNetCore 9.0.1` etc.) — the in-cluster build is the check.
 
+## Not covered on the laptop (k3d) — re-test on the infra cluster
+- [ ] Routes (the laptop uses Ingress/Traefik), edge TLS on the router.
+- [ ] The restricted-v2 SCC (the laptop sets an arbitrary non-root UID itself and only *warns* on Pod Security "restricted").
+- [ ] Gateway API CRDs managed by OpenShift, and their version, with KIC 3.5.
+- [ ] BuildConfig in-cluster build (the laptop pulls the image from GHCR).
+- [ ] OpenShift GitOps operator (the laptop runs upstream Argo CD core).
+- [ ] NetworkPolicy namespace labels specific to OpenShift (router, DNS, monitoring).
+- [ ] Keycloak as the token issuer (the laptop uses the mini issuer; both are simulations of ADFS).
+- [ ] Kong with 2+ pods per leg and HPA; latency numbers (laptop numbers are only comparative).
+
 ## Kong / OpenShift
 - [ ] OpenShift version of the production clusters ≥ 4.19 (Gateway API CRDs managed by the platform) and which
       Gateway API version they ship; KIC 3.5 compatibility with it.

@@ -42,6 +42,13 @@ Every per-leg chart has `values-<leg>.yaml`. **Adding a leg:** `scripts/add-leg.
 `scripts/bootstrap.sh` (namespace, Secrets, Konnect control plane). Nothing else lists the legs except
 `charts/gslb-sim/values.yaml`, which the script updates.
 
+## Platforms
+
+`cluster/platform.yaml` switches every chart between **`kubernetes`** (the laptop: k3d in WSL2) and
+**`openshift`** (OpenShift Local or the infra team's cluster). Moving to OpenShift = change that value, set
+`appsDomain` in `cluster/values-openshift.yaml`, push, run `scripts/bootstrap.sh`. Differences are listed in
+[docs/RUNBOOK.md](docs/RUNBOOK.md#two-ways-to-run-it).
+
 ## Run it
 
 See [docs/RUNBOOK.md](docs/RUNBOOK.md). Short version on OpenShift Local:
@@ -66,8 +73,10 @@ Keycloak simulating ADFS (`idp`), the blocking service (`blocking`), the GSLB si
 | Kong Gateway Enterprise | `kong/kong-gateway:3.14.0.16` | 3.14 = LTS, supported to 2029-04. Patch tag to verify in Phase 3 |
 | Kong Ingress Controller | `3.5.14` | latest 3.5.x |
 | Chart `kong/ingress` | `0.24.0` | depends on `kong/kong` 3.2.0 |
-| Gateway API CRDs | managed by OpenShift (4.19+) | **not** installed by us — see deviations |
-| Keycloak | `26.0.7` | dev mode, realm import |
+| Gateway API CRDs | OpenShift: managed by the platform; Kubernetes: `v1.6.2` standard, via ArgoCD | |
+| Keycloak | `26.0.7` | dev mode, realm import (OpenShift path) |
+| k3d / k3s | `v5.8.3` / `v1.35.10-k3s1` | laptop path |
+| Argo CD | `v3.5.7` core | laptop path |
 | OPA | `1.4.2-static` | |
 | Redis | `7.4.2` | counters only, no persistence |
 | PostgreSQL | `16.6` | blocking service |
@@ -98,3 +107,8 @@ only mirrors it (read-only).
 | Images built locally | OpenShift `BuildConfig` from GitHub | the workstation needs no .NET SDK / registry |
 | Swagger write auth via OAuth flow | paste a bearer token (`scripts/get-token.sh opsadmin`) | Keycloak's issuer is pinned to the in-cluster URL (so Kong and workstation tokens agree) |
 | Prometheus ServiceMonitor | metrics exposed, scraped manually | CRC disables cluster monitoring by default (saves ~4 GiB) |
+| OpenShift cluster | laptop: k3d (plain Kubernetes) in WSL2 | the only workstation has 8 GB RAM and Windows Home (no Hyper-V); charts stay OpenShift-ready via `global.platform` |
+| Keycloak | laptop: `mini` token issuer (same realm files, same URLs) | Keycloak needs ~600 MB of a 5 GB budget |
+| 2 legs always on | laptop: leg2 parked in `environments/standby/`, brought up for multi-leg tests | memory |
+| Kong HPA 2–5 | laptop: one Kong pod per leg, no HPA | memory; test 12 replaces a pod instead of scaling out |
+| OpenShift GitOps operator | laptop: upstream Argo CD core (no UI) in namespace `openshift-gitops` | memory; same Application manifests on both platforms |
