@@ -1,0 +1,112 @@
+---
+# Source: opa/templates/opa.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-config
+data:
+  config.yaml: |
+    services:
+      blocking:
+        url: http://blocking-service.blocking.svc.cluster.local:8080
+        credentials:
+          bearer:
+            # resolved by OPA from the environment at startup
+            token: "${BLOCKLIST_READER_KEY}"
+    bundles:
+      blocklist:
+        service: blocking
+        resource: /api/opa/bundle.tar.gz
+        polling:
+          min_delay_seconds: 2
+          max_delay_seconds: 4
+    labels:
+      leg: leg1
+    decision_logs:
+      console: false
+    status:
+      console: true
+
+---
+# Source: opa/templates/opa.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa
+spec:
+  selector:
+    app.kubernetes.io/name: opa
+  ports:
+    - { name: http, port: 8181, targetPort: http }
+
+---
+# Source: opa/templates/opa.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  labels:
+    app.kubernetes.io/name: opa
+    app.kubernetes.io/part-of: kong-poc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: opa
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: opa
+        app.kubernetes.io/part-of: kong-poc
+    spec:
+      
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: opa
+          image: docker.io/openpolicyagent/opa:1.4.2-static
+          args:
+            - run
+            - --server
+            - --addr=0.0.0.0:8181
+            - --diagnostic-addr=0.0.0.0:8282
+            - --config-file=/config/config.yaml
+            - --watch            # reload the policy when the ConfigMap changes
+            - /policy
+          env:
+            - name: BLOCKLIST_READER_KEY
+              valueFrom:
+                secretKeyRef: { name: blocklist-reader, key: api-key }
+          ports:
+            - { name: http, containerPort: 8181 }
+            - { name: diag, containerPort: 8282 }
+          readinessProbe:
+            # ready only once the policy AND the data bundle are activated
+            httpGet: { path: "/health?bundles", port: diag }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: diag }
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 192Mi
+            requests:
+              cpu: 50m
+              memory: 48Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /config, readOnly: true }
+            - { name: policy, mountPath: /policy, readOnly: true }
+      volumes:
+        - name: config
+          configMap: { name: opa-config }
+        - name: policy
+          configMap: { name: opa-policy }

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # One-time tool install inside Ubuntu 24.04 on WSL2 (laptop path). Run as your Linux user:
 #   bash scripts/wsl/setup-tools.sh            # asks for your Linux password (sudo)
-# Installs: Docker Engine (not Docker Desktop), kubectl, k3d, helm, gh, jq, python venv,
+# Installs: Docker Engine (not Docker Desktop), kubectl, k3d, helm, argocd CLI, gh, jq, python venv,
 # and optionally k6 (WITH_K6=1). Pinned versions, checksums verified. Safe to re-run.
 set -euo pipefail
 KUBECTL_VERSION=v1.35.10
 K3D_VERSION=v5.8.3
 HELM_VERSION=v3.22.1
+ARGOCD_VERSION=v3.5.7
 ARCH=amd64
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR\033[0m %s\n' "$*" >&2; exit 1; }
@@ -18,12 +19,12 @@ die() { printf '\033[1;31mERROR\033[0m %s\n' "$*" >&2; exit 1; }
   die "systemd was off. Enabled it in /etc/wsl.conf - in Windows PowerShell run: wsl --shutdown ; then open Ubuntu again and re-run this script"
 }
 
-log "1/6 base packages"
+log "1/7 base packages"
 sudo apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl gnupg jq git openssl \
   python3-venv python3-pip unzip >/dev/null
 
-log "2/6 Docker Engine (docker-ce from download.docker.com)"
+log "2/7 Docker Engine (docker-ce from download.docker.com)"
 if ! command -v docker >/dev/null; then
   sudo install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
@@ -42,20 +43,20 @@ fetch_verified() { # url sha256 dest
   sudo install -m 0755 "$tmp" "$3"; rm -f "$tmp"
 }
 
-log "3/6 kubectl $KUBECTL_VERSION"
+log "3/7 kubectl $KUBECTL_VERSION"
 if [[ "$(kubectl version --client -o json 2>/dev/null | jq -r .clientVersion.gitVersion)" != "$KUBECTL_VERSION" ]]; then
   sum="$(curl -fsSL "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/$ARCH/kubectl.sha256")"
   fetch_verified "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/$ARCH/kubectl" "$sum" /usr/local/bin/kubectl
 fi
 
-log "4/6 k3d $K3D_VERSION"
+log "4/7 k3d $K3D_VERSION"
 if [[ "$(k3d version 2>/dev/null | awk '/k3d version/ {print $3}')" != "$K3D_VERSION" ]]; then
   sum="$(curl -fsSL "https://github.com/k3d-io/k3d/releases/download/$K3D_VERSION/checksums.txt" | awk "/k3d-linux-$ARCH\$/ {print \$1}")"
   [[ -n "$sum" ]] || die "no checksum for k3d-linux-$ARCH"
   fetch_verified "https://github.com/k3d-io/k3d/releases/download/$K3D_VERSION/k3d-linux-$ARCH" "$sum" /usr/local/bin/k3d
 fi
 
-log "5/6 helm $HELM_VERSION"
+log "5/7 helm $HELM_VERSION"
 if [[ "$(helm version --template '{{.Version}}' 2>/dev/null)" != "$HELM_VERSION" ]]; then
   tmp="$(mktemp -d)"
   curl -fsSL "https://get.helm.sh/helm-$HELM_VERSION-linux-$ARCH.tar.gz" -o "$tmp/helm.tgz"
@@ -64,7 +65,14 @@ if [[ "$(helm version --template '{{.Version}}' 2>/dev/null)" != "$HELM_VERSION"
   tar -xzf "$tmp/helm.tgz" -C "$tmp" && sudo install -m 0755 "$tmp/linux-$ARCH/helm" /usr/local/bin/helm && rm -rf "$tmp"
 fi
 
-log "6/6 GitHub CLI (for pushing from WSL)"
+log "6/7 argocd CLI $ARGOCD_VERSION (also serves the Argo CD UI on demand: scripts/k3d/ui.sh argocd)"
+if [[ "$(argocd version --client --short 2>/dev/null | awk '{print $2}' | cut -d+ -f1)" != "$ARGOCD_VERSION" ]]; then
+  sum="$(curl -fsSL "https://github.com/argoproj/argo-cd/releases/download/$ARGOCD_VERSION/cli_checksums.txt" | awk "/argocd-linux-$ARCH\$/ {print \$1}")"
+  [[ -n "$sum" ]] || die "no checksum for argocd-linux-$ARCH"
+  fetch_verified "https://github.com/argoproj/argo-cd/releases/download/$ARGOCD_VERSION/argocd-linux-$ARCH" "$sum" /usr/local/bin/argocd
+fi
+
+log "7/7 GitHub CLI (for pushing from WSL)"
 if ! command -v gh >/dev/null; then
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli.gpg >/dev/null
   echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/githubcli.gpg] https://cli.github.com/packages stable main" \
@@ -80,7 +88,8 @@ if [[ "${WITH_K6:-0}" == "1" ]] && ! command -v k6 >/dev/null; then
 fi
 
 echo
-docker --version; kubectl version --client 2>/dev/null | head -1; k3d version | head -1; helm version --short; gh --version | head -1
+docker --version; kubectl version --client 2>/dev/null | head -1; k3d version | head -1; helm version --short
+argocd version --client --short 2>/dev/null; gh --version | head -1
 free -h | head -2
 if [[ "${NEED_RELOGIN:-0}" == "1" ]]; then
   echo; echo "You were added to the 'docker' group: close this Ubuntu window and open it again before the next step."

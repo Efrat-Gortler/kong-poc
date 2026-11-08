@@ -44,7 +44,9 @@ the second leg ≈ +0.6 GB. Close Chrome, Steam, BlueStacks and WhatsApp before 
 7. **Tests, one leg:** `python3 -m venv ~/.venv && ~/.venv/bin/pip install -r tests/acceptance/requirements.txt`,
    then `~/.venv/bin/pytest tests/acceptance -v` (2-leg tests are skipped).
 8. **[heavy] Multi-leg tests:** `scripts/leg.sh up leg2`, run the tests again, `scripts/leg.sh down leg2`.
-9. **Pause / resume:** `scripts/k3d/cluster.sh stop` frees the memory; `start` brings it all back.
+9. **See it:** `scripts/k3d/ui.sh argocd` (Argo CD UI on http://localhost:8080 while it runs), `scripts/k3d/ui.sh headlamp`
+   (kubeconfig for the Headlamp desktop app on Windows), or `kubectl get pods -A`.
+10. **Pause / resume:** `scripts/k3d/cluster.sh stop` frees the memory; `start` brings it all back.
 
 The blocking service image: the first push to GitHub triggers `.github/workflows/blocking-service-image.yml`.
 If the GHCR package is private, either make it public (GitHub → Packages → kong-poc/blocking-service →

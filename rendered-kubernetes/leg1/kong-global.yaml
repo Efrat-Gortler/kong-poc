@@ -1,0 +1,205 @@
+---
+# Source: kong-global/templates/network-policies.yaml
+# Who may send requests into this leg: the GSLB (simulator) to the Kong proxy,
+# and pods of this namespace among themselves (KIC -> admin API, Kong -> backends).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: leg1
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+    app.kubernetes.io/managed-by: Helm
+    kong-poc/leg: leg1
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+
+---
+# Source: kong-global/templates/network-policies.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gslb-to-kong-proxy
+  namespace: leg1
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+    app.kubernetes.io/managed-by: Helm
+    kong-poc/leg: leg1
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gslb-sim
+      ports:
+        - port: 8000
+          protocol: TCP
+
+---
+# Source: kong-global/templates/redis-alias.yaml
+# Fixed name for this leg's Redis. Plugins always point at kong-redis.<ns>.svc;
+# only this alias changes if Redis moves (in production: the leg-local Redis).
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-redis
+  namespace: leg1
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+    app.kubernetes.io/managed-by: Helm
+    kong-poc/leg: leg1
+spec:
+  type: ExternalName
+  externalName: redis.gw-shared.svc.cluster.local
+  ports:
+    - name: redis
+      port: 6379
+
+---
+# Source: kong-global/templates/gateway.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: kong
+  namespace: leg1
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+    app.kubernetes.io/managed-by: Helm
+    kong-poc/leg: leg1
+spec:
+  gatewayClassName: kong-leg1
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+---
+# Source: kong-global/templates/gateway.yaml
+# Entry point. Every HTTPRoute in this leg attaches to this Gateway.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: kong-leg1
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+    app.kubernetes.io/managed-by: Helm
+    kong-poc/leg: leg1
+  annotations:
+    # KIC configures an existing Kong (installed by the kong/ingress chart);
+    # it does not provision a new data plane per Gateway.
+    konghq.com/gatewayclass-unmanaged: "true"
+spec:
+  controllerName: konghq.com/kic-gateway-controller-leg1
+
+---
+# Source: kong-global/templates/plugins.yaml
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: leg1-openid-connect
+  labels:
+    global: "true"
+    app.kubernetes.io/part-of: kong-poc
+    app.kubernetes.io/managed-by: Helm
+    kong-poc/leg: leg1
+  annotations:
+    kubernetes.io/ingress.class: "kong-leg1"
+plugin: openid-connect
+config:
+  issuer: "http://keycloak.idp.svc.cluster.local:8080/realms/corp/.well-known/openid-configuration"
+  issuers_allowed:
+    - "http://keycloak.idp.svc.cluster.local:8080/realms/corp"
+  auth_methods: [bearer]
+  bearer_token_param_type: [header]
+  verify_signature: true
+  verify_claims: true
+  audience_required:
+    - api://kong-gateway
+  # No Kong Consumer per user: the claim itself becomes the authenticated credential.
+  credential_claim: [caller_id]
+  upstream_headers_claims: [caller_id]
+  upstream_headers_names: [x-caller-id]
+
+---
+# Source: kong-global/templates/plugins.yaml
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: leg1-blocklist
+  labels:
+    global: "true"
+    app.kubernetes.io/part-of: kong-poc
+    app.kubernetes.io/managed-by: Helm
+    kong-poc/leg: leg1
+  annotations:
+    kubernetes.io/ingress.class: "kong-leg1"
+plugin: blocklist
+config:
+  service_url: "http://blocking-service.blocking.svc.cluster.local:8080/api/blocklist"
+  poll_interval: 5
+  fail_open: false
+  observe_only: false
+  leg: "leg1"
+configPatches:
+  - path: /api_key
+    valueFrom:
+      secretKeyRef:
+        name: blocklist-reader
+        namespace: leg1
+        key: api-key
+
+---
+# Source: kong-global/templates/plugins.yaml
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: leg1-prometheus
+  labels:
+    global: "true"
+    app.kubernetes.io/part-of: kong-poc
+    app.kubernetes.io/managed-by: Helm
+    kong-poc/leg: leg1
+  annotations:
+    kubernetes.io/ingress.class: "kong-leg1"
+plugin: prometheus
+config:
+  status_code_metrics: true
+  latency_metrics: true
+  bandwidth_metrics: false
+  upstream_health_metrics: true
+  per_consumer: false
+
+---
+# Source: kong-global/templates/plugins.yaml
+# One JSON line per request on stdout, with the fields needed later to compute
+# per-user concurrency from logs: route, caller_id, start time, latency, leg.
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: leg1-access-log
+  labels:
+    global: "true"
+    app.kubernetes.io/part-of: kong-poc
+    app.kubernetes.io/managed-by: Helm
+    kong-poc/leg: leg1
+  annotations:
+    kubernetes.io/ingress.class: "kong-leg1"
+plugin: file-log
+config:
+  path: /dev/stdout
+  reopen: false
+  custom_fields_by_lua:
+    caller_id: "local c = kong.client.get_credential() return c and c.id or nil"
+    leg: "return 'leg1'"
+    route_name: "local r = kong.router.get_route() return r and r.name or nil"
+    # never write bearer tokens into logs (returning nil removes the field)
+    request.headers.authorization: "return nil"

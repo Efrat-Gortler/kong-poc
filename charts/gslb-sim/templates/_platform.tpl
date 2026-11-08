@@ -1,5 +1,5 @@
 {{- /*
-Platform helpers. IDENTICAL copy in every chart of this repo (charts/*/templates/_platform.tpl);
+Platform helpers. IDENTICAL copy in every chart of this repo (templates/_platform.tpl in each chart);
 edit one, then run scripts/sync-platform-helpers.sh.
 
 global.platform: openshift | kubernetes   (from cluster/values-<platform>.yaml)

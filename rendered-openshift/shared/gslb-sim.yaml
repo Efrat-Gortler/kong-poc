@@ -1,0 +1,236 @@
+---
+# Source: gslb-sim/templates/gslb.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gslb-config
+data:
+  haproxy.cfg: |
+    global
+      log stdout format raw local0 info
+      stats socket ipv4@127.0.0.1:9999 level admin
+      maxconn 4096
+
+    resolvers cluster
+      parse-resolv-conf
+      hold valid 10s
+
+    defaults
+      mode http
+      log global
+      option httplog
+      option forwardfor
+      timeout connect 5s
+      timeout client 120s
+      timeout server 120s
+      default-server init-addr last,libc,none resolvers cluster check inter 2s fall 2 rise 2
+
+    frontend gslb
+      bind :8080
+      # Tests may pin a request to one leg (bypasses round robin, still enters through the GSLB)
+      use_backend pin_leg1 if { req.hdr(x-gslb-leg) -m str leg1 }
+      use_backend pin_leg2 if { req.hdr(x-gslb-leg) -m str leg2 }
+      default_backend legs
+      http-response set-header x-gslb-leg %s
+
+    backend legs
+      balance roundrobin
+      server leg1 kong-leg1-gateway-proxy.leg1.svc.cluster.local:80
+      server leg2 kong-leg2-gateway-proxy.leg2.svc.cluster.local:80
+    
+    backend pin_leg1
+      server leg1 kong-leg1-gateway-proxy.leg1.svc.cluster.local:80
+    
+    backend pin_leg2
+      server leg2 kong-leg2-gateway-proxy.leg2.svc.cluster.local:80
+    
+  control.py: |
+    """GSLB-simulator control API (sidecar next to HAProxy, stdlib only).
+    
+      GET  /legs                -> state of every leg
+      POST /legs/<leg>/drain    -> take the leg out of rotation (no new requests)
+      POST /legs/<leg>/ready    -> put it back
+    
+    Talks to the HAProxy runtime API on 127.0.0.1:9999 (same pod).
+    State is runtime-only: restarting the pod puts every leg back in rotation.
+    """
+    import json
+    import re
+    import socket
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    
+    BACKEND = "legs"
+    LEG_RE = re.compile(r"^/legs/([a-z0-9-]+)/(drain|ready)$")
+    
+    
+    def haproxy(cmd: str) -> str:
+        with socket.create_connection(("127.0.0.1", 9999), timeout=3) as s:
+            s.sendall((cmd + "\n").encode())
+            chunks = []
+            while True:
+                data = s.recv(65536)
+                if not data:
+                    break
+                chunks.append(data)
+        return b"".join(chunks).decode()
+    
+    
+    def legs_state():
+        out = haproxy(f"show servers state {BACKEND}")
+        lines = [l for l in out.splitlines() if l and not l.startswith("#")]
+        result = {}
+        for line in lines[1:]:  # first line is the format version
+            f = line.split()
+            # fields: be_id be_name srv_id srv_name srv_addr srv_op_state srv_admin_state ...
+            name, op_state, admin_state = f[3], int(f[5]), int(f[6])
+            result[name] = {
+                "in_rotation": admin_state == 0,
+                "admin_state": admin_state,
+                "healthy": op_state == 2,
+            }
+        return result
+    
+    
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, status, payload):
+            data = json.dumps(payload).encode()
+            self.send_response(status)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+    
+        def do_GET(self):
+            if self.path in ("/healthz", "/readyz"):
+                return self._send(200, {"status": "ok"})
+            if self.path == "/legs":
+                return self._send(200, legs_state())
+            self._send(404, {"error": "not found"})
+    
+        def do_POST(self):
+            m = LEG_RE.match(self.path)
+            if not m:
+                return self._send(404, {"error": "not found"})
+            leg, action = m.groups()
+            state = legs_state()
+            if leg not in state:
+                return self._send(404, {"error": f"unknown leg {leg}"})
+            # "maint" = like removing the leg from the GSLB: no new requests at all
+            haproxy(f"set server {BACKEND}/{leg} state {'maint' if action == 'drain' else 'ready'}")
+            self._send(200, {leg: legs_state()[leg]})
+    
+        def log_message(self, fmt, *args):
+            print("control:", fmt % args, flush=True)
+    
+    
+    if __name__ == "__main__":
+        ThreadingHTTPServer(("0.0.0.0", 8081), Handler).serve_forever()
+    
+
+---
+# Source: gslb-sim/templates/gslb.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: gslb
+spec:
+  selector:
+    app.kubernetes.io/name: gslb
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: control, port: 8081, targetPort: control }
+
+---
+# Source: gslb-sim/templates/gslb.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gslb
+  labels:
+    app.kubernetes.io/name: gslb
+    app.kubernetes.io/part-of: kong-poc
+spec:
+  replicas: 1   # one instance: drain state lives in this pod's memory
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gslb
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gslb
+        app.kubernetes.io/part-of: kong-poc
+      annotations:
+        checksum/config: aefece1e9583
+    spec:
+      
+      containers:
+        - name: haproxy
+          image: docker.io/library/haproxy:3.0.5
+          args: ["haproxy", "-W", "-db", "-f", "/cfg/haproxy.cfg"]
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 5
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 20m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: cfg, mountPath: /cfg, readOnly: true }
+        - name: control
+          image: docker.io/library/python:3.12.8-slim
+          command: ["python", "-u", "/cfg/control.py"]
+          ports:
+            - { name: control, containerPort: 8081 }
+          readinessProbe:
+            httpGet: { path: /readyz, port: control }
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 20m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: cfg, mountPath: /cfg, readOnly: true }
+      volumes:
+        - name: cfg
+          configMap:
+            name: gslb-config
+
+---
+# Source: gslb-sim/templates/gslb.yaml
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: gslb
+spec:
+  host: gslb-gslb-sim.apps-crc.testing
+  to: { kind: Service, name: gslb }
+  port: { targetPort: http }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }
+
+---
+# Source: gslb-sim/templates/gslb.yaml
+# POC only: the drain/ready API. In production this is the GSLB vendor's own console.
+
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: gslb-control
+spec:
+  host: gslb-control-gslb-sim.apps-crc.testing
+  to: { kind: Service, name: gslb }
+  port: { targetPort: control }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }

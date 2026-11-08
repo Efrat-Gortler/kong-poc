@@ -1,0 +1,326 @@
+---
+# Source: mock-service/templates/deployment.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-echo
+  labels:
+    app.kubernetes.io/name: orders
+    app.kubernetes.io/part-of: kong-poc
+data:
+  echo.py: |
+    """Tiny echo backend for the Kong POC (stdlib only).
+    
+    Returns JSON with the leg, component, method, path, query and request headers.
+    GET <anything>/slow?ms=1500 sleeps before answering (timeout tests).
+    """
+    import json
+    import os
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlsplit
+    
+    LEG = os.environ.get("LEG", "unknown")
+    COMPONENT = os.environ.get("COMPONENT", "unknown")
+    PORT = int(os.environ.get("PORT", "8080"))
+    MAX_SLOW_MS = 120_000
+    
+    
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "kong-poc-echo"
+    
+        def _answer(self):
+            url = urlsplit(self.path)
+            query = parse_qs(url.query)
+            if url.path in ("/healthz", "/readyz"):
+                return self._send(200, {"status": "ok"})
+            if url.path.rstrip("/").endswith("/slow"):
+                try:
+                    ms = min(int(query.get("ms", ["1000"])[0]), MAX_SLOW_MS)
+                except ValueError:
+                    ms = 1000
+                time.sleep(ms / 1000)
+            length = int(self.headers.get("content-length") or 0)
+            body = self.rfile.read(length).decode("utf-8", "replace") if length else ""
+            self._send(200, {
+                "leg": LEG,
+                "service": COMPONENT,
+                "pod": os.environ.get("HOSTNAME"),
+                "method": self.command,
+                "path": url.path,
+                "query": {k: v if len(v) > 1 else v[0] for k, v in query.items()},
+                "headers": {k.lower(): v for k, v in self.headers.items()},
+                "body_bytes": len(body),
+            })
+    
+        def _send(self, status, payload):
+            data = json.dumps(payload).encode()
+            self.send_response(status)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.send_header("x-served-by-leg", LEG)
+            self.end_headers()
+            self.wfile.write(data)
+    
+        do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = _answer
+    
+        def log_message(self, fmt, *args):  # keep stdout quiet; Kong logs the traffic
+            pass
+    
+    
+    if __name__ == "__main__":
+        ThreadingHTTPServer.daemon_threads = True
+        ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    
+
+---
+# Source: mock-service/templates/deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders
+  labels:
+    app.kubernetes.io/name: orders
+    app.kubernetes.io/part-of: kong-poc
+  annotations:
+    
+    konghq.com/connect-timeout: "2000"
+    konghq.com/read-timeout: "10000"
+    konghq.com/write-timeout: "10000"
+spec:
+  selector:
+    app.kubernetes.io/name: orders
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+---
+# Source: mock-service/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+  labels:
+    app.kubernetes.io/name: orders
+    app.kubernetes.io/part-of: kong-poc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orders
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orders
+        app.kubernetes.io/part-of: kong-poc
+      annotations:
+        checksum/code: 3c4c36959933
+    spec:
+      
+      containers:
+        - name: echo
+          image: docker.io/library/python:3.12.8-slim
+          command: ["python", "-u", "/app/echo.py"]
+          env:
+            - { name: LEG, value: "leg1" }
+            - { name: COMPONENT, value: "orders" }
+            - { name: PORT, value: "8080" }
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          resources:
+            limits:
+              memory: 96Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: code, mountPath: /app, readOnly: true }
+      volumes:
+        - name: code
+          configMap:
+            name: orders-echo
+
+---
+# Source: mock-service/templates/routes.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: orders
+  namespace: leg1
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+    kong-poc/route: orders
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/plugins: "orders-rl-route,orders-rl-user"
+spec:
+  parentRefs:
+    - name: kong
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /orders
+      backendRefs:
+        - name: orders
+          port: 8080
+
+---
+# Source: mock-service/templates/routes.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: orders-create
+  namespace: leg1
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+    kong-poc/route: orders-create
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/plugins: "orders-create-rl-route,orders-create-rl-user"
+spec:
+  parentRefs:
+    - name: kong
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /orders
+          method: POST
+      backendRefs:
+        - name: orders
+          port: 8080
+
+---
+# Source: mock-service/templates/routes.yaml
+# Route-wide limit, PER LEG. The counter lives in this leg's own Redis logical DB,
+# so the legs never add up (rate-limiting has no namespace option; its keys are
+# built from route/service IDs, which would be identical across real clusters).
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: orders-rl-route
+  namespace: leg1
+plugin: rate-limiting
+config:
+  second: 400
+  limit_by: service
+  policy: redis
+  fault_tolerant: true
+  hide_client_headers: false
+  redis:
+    host: kong-redis.leg1.svc.cluster.local
+    port: 6379
+    database: 1
+configPatches:
+  - path: /redis/password
+    valueFrom:
+      secretKeyRef:
+        name: redis-auth
+        key: password
+
+---
+# Source: mock-service/templates/routes.yaml
+# Per-caller limit on this route, SHARED BY ALL LEGS: same Redis DB and the same
+# explicit namespace in every leg -> one counter per (route, caller_id).
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: orders-rl-user
+  namespace: leg1
+plugin: rate-limiting-advanced
+# Check the caller's own limit before the route-wide one, so a noisy caller
+# does not burn the route budget of everybody else (Enterprise dynamic ordering).
+ordering:
+  before:
+    access: [rate-limiting]
+config:
+  limit: [100]
+  window_size: [60]
+  window_type: sliding
+  identifier: credential
+  namespace: orders-user
+  strategy: redis
+  sync_rate: 0          # synchronous: exact count across legs (one Redis round trip)
+  hide_client_headers: false
+  redis:
+    host: kong-redis.leg1.svc.cluster.local
+    port: 6379
+    database: 0
+configPatches:
+  - path: /redis/password
+    valueFrom:
+      secretKeyRef:
+        name: redis-auth
+        key: password
+
+---
+# Source: mock-service/templates/routes.yaml
+# Route-wide limit, PER LEG. The counter lives in this leg's own Redis logical DB,
+# so the legs never add up (rate-limiting has no namespace option; its keys are
+# built from route/service IDs, which would be identical across real clusters).
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: orders-create-rl-route
+  namespace: leg1
+plugin: rate-limiting
+config:
+  second: 200
+  limit_by: service
+  policy: redis
+  fault_tolerant: true
+  hide_client_headers: false
+  redis:
+    host: kong-redis.leg1.svc.cluster.local
+    port: 6379
+    database: 1
+configPatches:
+  - path: /redis/password
+    valueFrom:
+      secretKeyRef:
+        name: redis-auth
+        key: password
+
+---
+# Source: mock-service/templates/routes.yaml
+# Per-caller limit on this route, SHARED BY ALL LEGS: same Redis DB and the same
+# explicit namespace in every leg -> one counter per (route, caller_id).
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: orders-create-rl-user
+  namespace: leg1
+plugin: rate-limiting-advanced
+# Check the caller's own limit before the route-wide one, so a noisy caller
+# does not burn the route budget of everybody else (Enterprise dynamic ordering).
+ordering:
+  before:
+    access: [rate-limiting]
+config:
+  limit: [30]
+  window_size: [60]
+  window_type: sliding
+  identifier: credential
+  namespace: orders-create-user
+  strategy: redis
+  sync_rate: 0          # synchronous: exact count across legs (one Redis round trip)
+  hide_client_headers: false
+  redis:
+    host: kong-redis.leg1.svc.cluster.local
+    port: 6379
+    database: 0
+configPatches:
+  - path: /redis/password
+    valueFrom:
+      secretKeyRef:
+        name: redis-auth
+        key: password
