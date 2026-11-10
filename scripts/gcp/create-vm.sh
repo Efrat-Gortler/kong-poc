@@ -5,7 +5,8 @@
 # Network: SSH only through IAP (gcloud compute ssh --tunnel-through-iap);
 #          80/443/6443 (OpenShift console, routes, API) only from ALLOW_IP.
 #
-#   ALLOW_IP=<your home IP> bash scripts/gcp/create-vm.sh
+#   ALLOW_IP=<your home IP or range, e.g. 188.64.206.0/24> bash scripts/gcp/create-vm.sh
+# A home IP that changes: allow its /24 range, or re-run with the new IP (only the firewall is updated).
 # Safe to re-run: existing pieces are kept.
 set -euo pipefail
 PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
@@ -13,7 +14,8 @@ REGION="${REGION:-europe-west1}"
 ZONE="${ZONE:-europe-west1-b}"
 NAME="${NAME:-kong-poc-crc}"
 MACHINE="${MACHINE:-n2-standard-8}"
-: "${ALLOW_IP:?set ALLOW_IP to your public IP (the one Claude found, or https://api.ipify.org)}"
+: "${ALLOW_IP:?set ALLOW_IP to your public IP or range (https://api.ipify.org)}"
+[[ "$ALLOW_IP" == */* ]] || ALLOW_IP="$ALLOW_IP/32"
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR\033[0m %s\n' "$*" >&2; exit 1; }
 [[ -n "$PROJECT" ]] || die "no project: gcloud config set project <PROJECT_ID>"
@@ -39,10 +41,10 @@ gcloud compute firewall-rules describe "$NAME-iap-ssh" >/dev/null 2>&1 \
   || gcloud compute firewall-rules create "$NAME-iap-ssh" --network default --direction INGRESS \
        --allow tcp:22 --source-ranges 35.235.240.0/20 --target-tags "$NAME"
 if gcloud compute firewall-rules describe "$NAME-web" >/dev/null 2>&1; then
-  gcloud compute firewall-rules update "$NAME-web" --source-ranges "$ALLOW_IP/32"
+  gcloud compute firewall-rules update "$NAME-web" --source-ranges "$ALLOW_IP"
 else
   gcloud compute firewall-rules create "$NAME-web" --network default --direction INGRESS \
-    --allow tcp:80,tcp:443,tcp:6443 --source-ranges "$ALLOW_IP/32" --target-tags "$NAME"
+    --allow tcp:80,tcp:443,tcp:6443 --source-ranges "$ALLOW_IP" --target-tags "$NAME"
 fi
 
 log "4/6 nightly stop at 22:00 Asia/Jerusalem"
