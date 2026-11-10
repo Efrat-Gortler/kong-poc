@@ -10,8 +10,9 @@
 set -euo pipefail
 NAME="${NAME:-kong-poc-crc}"
 REGION="${REGION:-europe-west1}"
+ZONE="${ZONE:-europe-west1-b}"   # explicit: a new Cloud Shell session may have no default zone
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-ssh_vm() { gcloud compute ssh "$NAME" --tunnel-through-iap --quiet "$@"; }
+ssh_vm() { gcloud compute ssh "$NAME" --zone "$ZONE" --tunnel-through-iap --quiet "$@"; }
 
 case "${1:-}" in
   setup)
@@ -22,7 +23,7 @@ case "${1:-}" in
       files+=("$HOME/pull-secret.txt")
     fi
     git -C "$REPO_ROOT" bundle create /tmp/kong-poc.bundle --all >/dev/null 2>&1
-    gcloud compute scp --tunnel-through-iap --quiet "${files[@]}" "$NAME":/tmp/
+    gcloud compute scp --zone "$ZONE" --tunnel-through-iap --quiet "${files[@]}" "$NAME":/tmp/
     ssh_vm --command 'set -e
       command -v git >/dev/null || sudo dnf -y -q install git >/dev/null   # not in the CentOS Stream image
       [[ -d ~/kong-poc ]] || git clone -q /tmp/kong-poc.bundle ~/kong-poc
@@ -36,8 +37,8 @@ case "${1:-}" in
     ssh_vm --command 'p=$(pgrep -f crc-setup.sh | head -1); if [[ -n "$p" ]]; then tail -n +1 -f --pid="$p" ~/crc-setup.log; else cat ~/crc-setup.log 2>/dev/null || echo "no installation log yet"; fi' ;;
   ssh)   ssh_vm ;;
   run)   shift; ssh_vm --command "cd ~/kong-poc && $*" ;;
-  start) gcloud compute instances start "$NAME" && echo "OpenShift needs ~5 more minutes: bash scripts/gcp/vm.sh run 'crc status'" ;;
-  stop)  gcloud compute instances stop "$NAME" ;;
+  start) gcloud compute instances start "$NAME" --zone "$ZONE" && echo "OpenShift needs ~5 more minutes: bash scripts/gcp/vm.sh run 'crc status'" ;;
+  stop)  gcloud compute instances stop "$NAME" --zone "$ZONE" ;;
   ip)    gcloud compute addresses describe "$NAME-ip" --region "$REGION" --format='value(address)' ;;
   *) sed -n '2,9p' "$0"; exit 1 ;;
 esac
