@@ -41,6 +41,10 @@ Each item: what the POC assumed, and what must be checked.
 - [ ] Keycloak as the token issuer (the laptop uses the mini issuer; both are simulations of ADFS).
 - [ ] Kong with 2+ pods per leg and HPA; latency numbers (laptop numbers are only comparative).
 
+## Not covered on the GCP VM (OKD via OpenShift Local)
+- [ ] OKD is the community build of OpenShift: same APIs (Routes, SCCs, BuildConfig, managed Gateway API CRDs), but not the Red Hat product build.
+- [ ] OpenShift GitOps operator (OKD has no redhat-operators catalog; upstream Argo CD core is used, with the nonroot-v2 SCC for its service accounts).
+
 ## Kong / OpenShift
 - [ ] OpenShift version of the production clusters ≥ 4.19 (Gateway API CRDs managed by the platform) and which
       Gateway API version they ship; KIC 3.5 compatibility with it.

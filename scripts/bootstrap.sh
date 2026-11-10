@@ -46,20 +46,34 @@ if [[ "$POC_PLATFORM" != openshift ]]; then
 fi
 log "    $(legs | tr '\n' ' ')gw-shared idp blocking gslb-sim"
 
-if [[ "$POC_PLATFORM" != openshift ]]; then
+# GitOps engine: the OpenShift GitOps operator when the cluster offers it (OpenShift with a
+# Red Hat pull secret); otherwise (plain Kubernetes, OKD) the minimal upstream Argo CD core.
+GITOPS=upstream
+if [[ "$POC_PLATFORM" == openshift ]] && oc get packagemanifest openshift-gitops-operator -n openshift-marketplace >/dev/null 2>&1; then
+  GITOPS=operator
+fi
+log "    GitOps engine: $GITOPS"
+if [[ "$GITOPS" == upstream ]]; then
   log "3/5 Argo CD (minimal core install, namespace openshift-gitops)"
   if ! oc get deploy argocd-repo-server -n openshift-gitops >/dev/null 2>&1; then
     confirm "Install Argo CD v3.5.7 (core: no UI) into this cluster?" || die "aborted"
   fi
-  kubectl apply --server-side --force-conflicts -k "$REPO_ROOT/cluster/kubernetes/argocd" >/dev/null
-  kubectl wait --for=condition=Established crd/applications.argoproj.io crd/applicationsets.argoproj.io --timeout=60s >/dev/null
-  kubectl apply --server-side -n openshift-gitops -f "$REPO_ROOT/cluster/kubernetes/argocd/default-project.yaml" >/dev/null
+  if [[ "$POC_PLATFORM" == openshift ]]; then
+    # OKD/OpenShift: upstream Argo CD images run as UID 999 -> allow the nonroot-v2 SCC for its service accounts
+    oc get ns openshift-gitops >/dev/null 2>&1 || oc create ns openshift-gitops >/dev/null
+    for sa in argocd-application-controller argocd-applicationset-controller argocd-repo-server argocd-redis default; do
+      oc adm policy add-scc-to-user nonroot-v2 -z "$sa" -n openshift-gitops >/dev/null
+    done
+  fi
+  oc apply --server-side --force-conflicts -k "$REPO_ROOT/cluster/kubernetes/argocd" >/dev/null
+  oc wait --for=condition=Established crd/applications.argoproj.io crd/applicationsets.argoproj.io --timeout=60s >/dev/null
+  oc apply --server-side -n openshift-gitops -f "$REPO_ROOT/cluster/kubernetes/argocd/default-project.yaml" >/dev/null
   for d in argocd-repo-server argocd-applicationset-controller argocd-redis; do
-    kubectl rollout status "deploy/$d" -n openshift-gitops --timeout=5m
+    oc rollout status "deploy/$d" -n openshift-gitops --timeout=5m
   done
-  kubectl rollout status statefulset/argocd-application-controller -n openshift-gitops --timeout=5m
+  oc rollout status statefulset/argocd-application-controller -n openshift-gitops --timeout=5m
 fi
-if [[ "$POC_PLATFORM" == openshift ]] && ! oc get crd applicationsets.argoproj.io >/dev/null 2>&1; then
+if [[ "$GITOPS" == operator ]] && ! oc get crd applicationsets.argoproj.io >/dev/null 2>&1; then
   log "3/5 OpenShift GitOps"
   confirm "Install the OpenShift GitOps operator (cluster-wide)?" || die "aborted"
   oc apply -f - <<'YAML'
@@ -81,7 +95,7 @@ YAML
   done
   oc rollout status deploy/openshift-gitops-server -n openshift-gitops --timeout=10m
 fi
-if [[ "$POC_PLATFORM" == openshift ]] && ! oc get clusterrolebinding kong-poc-argocd-admin >/dev/null 2>&1; then
+if [[ "$GITOPS" == operator ]] && ! oc get clusterrolebinding kong-poc-argocd-admin >/dev/null 2>&1; then
   confirm "Grant cluster-admin to the ArgoCD application controller (needed for GatewayClass, KongClusterPlugin, CRDs)?" || die "aborted"
   oc create clusterrolebinding kong-poc-argocd-admin --clusterrole=cluster-admin \
     --serviceaccount=openshift-gitops:openshift-gitops-argocd-application-controller >/dev/null
@@ -110,6 +124,8 @@ fi
 log "5/5 ArgoCD root application"
 oc apply -f "$REPO_ROOT/argocd/root.yaml" >/dev/null
 log "done. Watch: oc get applications -n openshift-gitops -w"
-if [[ "$POC_PLATFORM" == openshift ]]; then
+if [[ "$GITOPS" == operator ]]; then
   log "ArgoCD UI: https://$(oc get route openshift-gitops-server -n openshift-gitops -o jsonpath='{.spec.host}')"
+else
+  log "ArgoCD UI on demand: scripts/k3d/ui.sh argocd   (Applications are also visible in the console: Home > API Explorer > Application)"
 fi

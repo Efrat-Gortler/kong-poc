@@ -24,12 +24,13 @@ Everything else (charts, plugins, tests) is the same.
 | Where | What |
 |---|---|
 | Google Cloud Shell | creates and drives the VM (`scripts/gcp/*.sh`) |
-| VM `kong-poc-crc` (n2-standard-8, CentOS Stream 9) | OpenShift Local 2.63 (7 vCPU / 26 GiB), HAProxy publishing 80/443/6443, `oc`, `helm`, `gh`, test venv |
+| VM `kong-poc-crc` (n2-standard-8, CentOS Stream 9) | OpenShift Local 2.63, **OKD preset** (no Red Hat account; `PRESET=openshift` + pull secret for OCP), 7 vCPU / 26 GiB, HAProxy publishing 80/443/6443, `oc`, `helm`, `gh`, test venv |
 | Your Windows browser | console and POC routes, via hosts entries (`scripts/windows/hosts-crc.cmd`) |
 
 1. **Cloud Shell:** `git clone https://github.com/Efrat-Gortler/kong-poc.git && cd kong-poc`
    (or upload `kong-poc.bundle` and `git clone kong-poc.bundle kong-poc`).
-2. **Pull secret:** Cloud Shell menu ⋮ → *Upload* → the Red Hat pull secret, then `mv ~/pull-secret* ~/pull-secret.txt`.
+2. **(only for `PRESET=openshift`) Pull secret:** Cloud Shell menu ⋮ → *Upload* → the Red Hat pull secret, then `mv ~/pull-secret* ~/pull-secret.txt`.
+   With OKD (default) Argo CD is the upstream core install (no OpenShift GitOps operator in OKD's catalog).
 3. **VM:** `ALLOW_IP=<your public IP> bash scripts/gcp/create-vm.sh` (~5 min).
 4. **OpenShift Local:** `bash scripts/gcp/vm.sh setup` (30–40 min, mostly waiting).
 5. **Windows hosts entries (admin, once):** run `scripts/windows/hosts-crc.cmd` that Claude generates with the VM IP.

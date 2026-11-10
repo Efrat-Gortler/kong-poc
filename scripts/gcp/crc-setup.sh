@@ -5,6 +5,8 @@
 # (scripts/windows/hosts-crc.cmd) reaches the console and the POC routes.
 set -euo pipefail
 CRC_VERSION=2.63.0
+# okd: no Red Hat account / pull secret needed (default). openshift: needs ~/.crc-pull-secret.txt
+PRESET="${PRESET:-okd}"
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR\033[0m %s\n' "$*" >&2; exit 1; }
 [[ -e /dev/kvm ]] || die "/dev/kvm missing: the VM was created without nested virtualization"
@@ -24,14 +26,17 @@ if [[ "$(crc version 2>/dev/null | awk '/CRC version/ {print $3}' | cut -d+ -f1)
 fi
 crc version
 
-log "3/6 configure (7 vCPU / 26 GiB for OpenShift, the rest for the host)"
+log "3/6 configure: preset $PRESET, 7 vCPU / 26 GiB for OpenShift, the rest for the host"
 crc config set consent-telemetry no >/dev/null
-crc config set preset openshift >/dev/null
+crc config set preset "$PRESET" >/dev/null
 crc config set cpus 7 >/dev/null
 crc config set memory 26624 >/dev/null
 crc config set disk-size 120 >/dev/null
 crc config set enable-cluster-monitoring false >/dev/null
-crc config set pull-secret-file "$HOME/.crc-pull-secret.txt" >/dev/null
+if [[ "$PRESET" == openshift ]]; then
+  [[ -f "$HOME/.crc-pull-secret.txt" ]] || die "preset openshift needs the Red Hat pull secret (~/.crc-pull-secret.txt)"
+  crc config set pull-secret-file "$HOME/.crc-pull-secret.txt" >/dev/null
+fi
 
 log "4/6 crc setup + start (15-25 minutes, mostly waiting)"
 crc setup
