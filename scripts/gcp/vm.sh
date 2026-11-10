@@ -24,6 +24,7 @@ case "${1:-}" in
     git -C "$REPO_ROOT" bundle create /tmp/kong-poc.bundle --all >/dev/null 2>&1
     gcloud compute scp --tunnel-through-iap --quiet "${files[@]}" "$NAME":/tmp/
     ssh_vm --command 'set -e
+      command -v git >/dev/null || sudo dnf -y -q install git >/dev/null   # not in the CentOS Stream image
       [[ -d ~/kong-poc ]] || git clone -q /tmp/kong-poc.bundle ~/kong-poc
       git -C ~/kong-poc remote set-url origin "'"$(git -C "$REPO_ROOT" remote get-url origin)"'"
       if [[ -f /tmp/pull-secret.txt ]]; then install -m 600 /tmp/pull-secret.txt ~/.crc-pull-secret.txt && rm -f /tmp/pull-secret.txt; fi
