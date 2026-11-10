@@ -12,7 +12,8 @@ in `tests/acceptance` and compare two blocking mechanisms (Lua plugin vs OPA).
   static IP 35.240.80.253, stops itself at 22:00 Asia/Jerusalem (start: Cloud Shell
   `bash scripts/gcp/vm.sh start`, or the Compute Engine console).
 - **OpenShift:** OpenShift Local (CRC 2.63) with the **OKD** preset (the user has no Red Hat account),
-  7 vCPU / 26 GiB, cluster monitoring off. HAProxy on the VM publishes 80/443/6443 of the CRC VM.
+  7 vCPU / 26 GiB, cluster monitoring off. CRC uses its default user network mode: the crc daemon publishes 80/443, HAProxy adds
+  `<host IP>:6443 -> 127.0.0.1:6443`. Lingering + user unit `crc-autostart.service` keep/start it across SSH logouts and reboots.
   Install log: `~/crc-setup.log` (script `scripts/gcp/crc-setup.sh`). `eval "$(crc oc-env)"` for `oc`.
 - **Repo:** `~/kong-poc` = github.com/Efrat-Gortler/kong-poc (public; owner may make it private).
   `cluster/platform.yaml` is `openshift`; both legs (`leg1`, `leg2`) are active in `environments/`.

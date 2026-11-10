@@ -24,7 +24,7 @@ Everything else (charts, plugins, tests) is the same.
 | Where | What |
 |---|---|
 | Google Cloud Shell | creates and drives the VM (`scripts/gcp/*.sh`) |
-| VM `kong-poc-crc` (n2-standard-8, CentOS Stream 9) | OpenShift Local 2.63, **OKD preset** (no Red Hat account; `PRESET=openshift` + pull secret for OCP), 7 vCPU / 26 GiB, HAProxy publishing 80/443/6443, `oc`, `helm`, `gh`, test venv |
+| VM `kong-poc-crc` (n2-standard-8, CentOS Stream 9) | OpenShift Local 2.63, **OKD preset** (no Red Hat account; `PRESET=openshift` + pull secret for OCP), 7 vCPU / 26 GiB (user network mode: the crc daemon publishes 80/443, HAProxy adds 6443; lingering + `crc-autostart` user unit), `oc`, `helm`, `gh`, test venv |
 | Your Windows browser | console and POC routes, via hosts entries (`scripts/windows/hosts-crc.cmd`) |
 
 1. **Cloud Shell:** `git clone https://github.com/Efrat-Gortler/kong-poc.git && cd kong-poc`
@@ -38,7 +38,7 @@ Everything else (charts, plugins, tests) is the same.
    `oc login -u kubeadmin https://api.crc.testing:6443` (password: `crc console --credentials`),
    `read -rs KONNECT_TOKEN && export KONNECT_TOKEN`, `gh auth login`, `scripts/bootstrap.sh`.
 7. **Tests (on the VM):** `~/.venv/bin/pytest tests/acceptance -v`.
-8. **Daily:** `bash scripts/gcp/vm.sh start` in the morning (OpenShift is back ~5 min later); it stops at 22:00
+8. **Daily:** `bash scripts/gcp/vm.sh start` in the morning (the `crc-autostart` user unit starts OpenShift, ~10 min; check `crc status`); it stops at 22:00
    by itself, or `bash scripts/gcp/vm.sh stop`.
 
 ## Laptop path — WSL2 + k3d (8 GB machine)

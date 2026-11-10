@@ -112,3 +112,5 @@ only mirrors it (read-only).
 | 2 legs always on | laptop: leg2 parked in `environments/standby/`, brought up for multi-leg tests | memory |
 | Kong HPA 2–5 | laptop: one Kong pod per leg, no HPA | memory; test 12 replaces a pod instead of scaling out |
 | OpenShift GitOps operator | laptop: upstream Argo CD core (no UI) in namespace `openshift-gitops` | memory; same Application manifests on both platforms |
+| GCP VM: HAProxy publishes 80/443/6443 of the CRC VM | HAProxy only `<host IP>:6443 -> 127.0.0.1:6443`; the crc daemon publishes 80/443 | CRC's default *user* network mode already binds 80/443 on all interfaces (HAProxy failed with "Address already in use") and 6443 on 127.0.0.1 |
+| GCP VM: OpenShift starts again by itself | `loginctl enable-linger` + user unit `crc-autostart.service` (`crc start` at boot, `crc stop` at shutdown) | the crc daemon is a systemd user service: without lingering it died with the last SSH session and the CRC VM lost its network; nothing ran `crc start` after the nightly stop |

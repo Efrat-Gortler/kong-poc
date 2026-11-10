@@ -37,7 +37,7 @@ case "${1:-}" in
     ssh_vm --command 'p=$(pgrep -f crc-setup.sh | head -1); if [[ -n "$p" ]]; then tail -n +1 -f --pid="$p" ~/crc-setup.log; else cat ~/crc-setup.log 2>/dev/null || echo "no installation log yet"; fi' ;;
   ssh)   ssh_vm ;;
   run)   shift; ssh_vm --command "cd ~/kong-poc && $*" ;;
-  start) gcloud compute instances start "$NAME" --zone "$ZONE" && echo "OpenShift needs ~5 more minutes: bash scripts/gcp/vm.sh run 'crc status'" ;;
+  start) gcloud compute instances start "$NAME" --zone "$ZONE" && echo "OpenShift starts by itself (crc-autostart user unit) in ~10 minutes: bash scripts/gcp/vm.sh run 'crc status'" ;;
   stop)  gcloud compute instances stop "$NAME" --zone "$ZONE" ;;
   ip)    gcloud compute addresses describe "$NAME-ip" --region "$REGION" --format='value(address)' ;;
   *) sed -n '2,9p' "$0"; exit 1 ;;
