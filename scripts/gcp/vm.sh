@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run in Google Cloud Shell: everything on the POC machine goes through here.
 #   bash scripts/gcp/vm.sh setup        # copies the repo, installs OpenShift Local / OKD (30-40 min)
+#   bash scripts/gcp/vm.sh logs         # follow / show the installation log (safe to reconnect)
 #   bash scripts/gcp/vm.sh ssh          # shell on the machine (repo in ~/kong-poc)
 #   bash scripts/gcp/vm.sh start|stop   # start/stop the VM (OpenShift starts again by itself)
 #   bash scripts/gcp/vm.sh ip           # external IP (for scripts/windows/hosts-crc.cmd)
@@ -26,7 +27,12 @@ case "${1:-}" in
       [[ -d ~/kong-poc ]] || git clone -q /tmp/kong-poc.bundle ~/kong-poc
       git -C ~/kong-poc remote set-url origin "'"$(git -C "$REPO_ROOT" remote get-url origin)"'"
       if [[ -f /tmp/pull-secret.txt ]]; then install -m 600 /tmp/pull-secret.txt ~/.crc-pull-secret.txt && rm -f /tmp/pull-secret.txt; fi
-      PRESET='"$PRESET"' bash ~/kong-poc/scripts/gcp/crc-setup.sh' ;;
+      # detached: keeps running on the VM if Cloud Shell disconnects; log in ~/crc-setup.log
+      PRESET='"$PRESET"' setsid nohup bash ~/kong-poc/scripts/gcp/crc-setup.sh > ~/crc-setup.log 2>&1 < /dev/null &
+      echo "installation started on the VM (pid $!)"'
+    "$0" logs ;;
+  logs)  # follow the installation log; Ctrl+C stops watching, not the installation
+    ssh_vm --command 'p=$(pgrep -f crc-setup.sh | head -1); if [[ -n "$p" ]]; then tail -n +1 -f --pid="$p" ~/crc-setup.log; else cat ~/crc-setup.log 2>/dev/null || echo "no installation log yet"; fi' ;;
   ssh)   ssh_vm ;;
   run)   shift; ssh_vm --command "cd ~/kong-poc && $*" ;;
   start) gcloud compute instances start "$NAME" && echo "OpenShift needs ~5 more minutes: bash scripts/gcp/vm.sh run 'crc status'" ;;
