@@ -26,7 +26,8 @@ var knownRoutes = (cfg.GetSection("Blocking:KnownRoutes").Get<string[]>() ?? [])
 builder.Services.AddDbContext<BlockingDbContext>(o =>
     o.UseNpgsql(cfg.GetConnectionString("Blocking") ?? throw new InvalidOperationException("ConnectionStrings:Blocking is required")));
 
-builder.Services.Configure<JsonOptions>(o =>
+// minimal APIs read Http.Json.JsonOptions; Mvc.JsonOptions (also imported) is ambiguous with it
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(o =>
 {
     foreach (var c in Names.Json.Converters) o.SerializerOptions.Converters.Add(c);
     o.SerializerOptions.DefaultIgnoreCondition = Names.Json.DefaultIgnoreCondition;
