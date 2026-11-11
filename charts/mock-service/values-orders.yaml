@@ -7,6 +7,14 @@ kongRoutes:
     port: 8080
     routeLimitPerSecond: 400
     userLimitPerMinute: 100
+  # Load-test route for test 13 (tests/load/latency.js): same plugin chain as /orders, limits high
+  # enough that k6 measures proxied requests, not 429s (2 callers x 50 req/s).
+  - name: orders-perf
+    path: /orders-perf
+    service: orders
+    port: 8080
+    routeLimitPerSecond: 1000
+    userLimitPerMinute: 100000
   - name: orders-create          # exception: POST has its own thresholds
     path: /orders
     method: POST

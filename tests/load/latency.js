@@ -1,8 +1,8 @@
 // 13. Latency comparison: p50/p95/p99 through the GSLB for blocking.mode = off | lua | opa.
 // Run by tests/acceptance/run-blocking-comparison.sh (which switches the mode), or alone:
 //   TOKEN=$(scripts/get-token.sh normaluser) MODE=lua k6 run tests/load/latency.js
-// Uses the general /orders route (high limits) with a pool of tokens so per-user limits
-// (100/min) are not what we measure.
+// Uses /orders-perf: the same plugin chain as /orders, but limits high enough that we measure
+// proxied requests (/orders allows 100/min per caller, k6 sends 50 req/s).
 import http from 'k6/http';
 import { check } from 'k6';
 import exec from 'k6/execution';
@@ -43,7 +43,7 @@ export function setup() {
 
 export default function (data) {
   const token = data.tokens[exec.scenario.iterationInTest % data.tokens.length];
-  const res = http.get(`${GSLB}/orders/${exec.scenario.iterationInTest % 1000}`,
+  const res = http.get(`${GSLB}/orders-perf/${exec.scenario.iterationInTest % 1000}`,
     { headers: { Authorization: `Bearer ${token}` }, tags: { name: 'orders' } });
   check(res, { 'status 200': (r) => r.status === 200 });
 }
