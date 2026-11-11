@@ -33,7 +33,7 @@ in `tests/acceptance` and compare two blocking mechanisms (Lua plugin vs OPA).
      `scripts/bootstrap.sh`. On OKD there is no OpenShift GitOps operator, so bootstrap installs upstream
      Argo CD core (nonroot-v2 SCC for its SAs). It creates Konnect control planes `poc-leg1/2` (EU) and
      commits their IDs. **The Konnect 30-day trial effectively starts here — note the date in README.md.**
-  6. Watch `oc get applications -n openshift-gitops`; verify `/license` per leg before Enterprise plugins.
+  6. Watch `oc get applications -n openshift-gitops`; verify `scripts/kong-admin.sh <leg> / | jq .license` per leg before Enterprise plugins.
   7. Tests: `~/.venv/bin/pytest tests/acceptance -v`, then `-m destructive`, `ALLOW_GIT_PUSH=1 -m gitops`,
      then `tests/acceptance/run-blocking-comparison.sh` (needs k6). Fill `docs/TEST-REPORT.md`.
 - Expect first-run issues to fix in Git (never by hand in the cluster): exact Kong image patch tag,

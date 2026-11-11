@@ -138,9 +138,9 @@ git add charts/kong-values && git commit -m "Konnect control plane IDs" && git p
 for l in leg1 leg2; do oc get pods -n $l; done
 oc get pods -n leg1 --show-labels | grep gateway        # confirm labels for the egress NetworkPolicy
 oc exec -n leg1 deploy/kong-leg1-gateway -- kong version
-oc exec -n leg1 deploy/kong-leg1-gateway -- curl -s localhost:8001/license | jq '.license.expiration'
+scripts/kong-admin.sh leg1 / | jq '.license.license_expiration_date'   # image has no curl; DB-less: no /license
 ```
-**Check:** Kong version is 3.14.x; `/license` returns an expiration date (Enterprise plugins will load).
+**Check:** Kong version is 3.14.x; `.license` in the admin root returns an expiration date (Enterprise plugins will load).
 If the image tag is wrong, fix `gateway.image.tag` in `charts/kong-values/values.yaml`, push.
 Optionally enable egress policies: set `networkPolicies.egress.enabled: true` (and the selector) in `charts/kong-global/values.yaml`.
 
@@ -154,7 +154,7 @@ curl -sk -H "Authorization: Bearer $T" https://gslb-gslb-sim.apps-crc.testing/or
 curl -sk -o /dev/null -D - -H "Authorization: Bearer $T" https://gslb-gslb-sim.apps-crc.testing/users/limited/a | grep -i ratelimit
 ```
 Check plugin field names against the running version if something is rejected:
-`oc exec -n leg1 deploy/kong-leg1-gateway -- curl -s localhost:8001/schemas/plugins/openid-connect | jq '.fields'`
+`scripts/kong-admin.sh leg1 /schemas/plugins/openid-connect | jq '.fields'`
 and KIC events: `oc get events -n leg1 --field-selector reason=KongConfigurationApplyFailed`.
 
 ## Phase 6 — blocking service
