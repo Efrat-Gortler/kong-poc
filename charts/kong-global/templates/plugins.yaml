@@ -62,7 +62,7 @@ configPatches:
       secretKeyRef:
         name: {{ .Values.blocking.readerSecret }}
         namespace: {{ $ns }}
-        key: api-key
+        key: api-key-json   # JSON-quoted copy (scripts/create-secrets.sh)
 ---
 {{- end }}
 {{- if has .Values.blocking.mode (list "opa" "both-observe") }}

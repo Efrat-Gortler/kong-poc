@@ -81,7 +81,7 @@ configPatches:
     valueFrom:
       secretKeyRef:
         name: {{ $g.redis.passwordSecret }}
-        key: password
+        key: password-json   # JSON-quoted copy (scripts/create-secrets.sh)
 {{- end }}
 {{- if $r.userLimitPerMinute }}
 ---
@@ -118,7 +118,7 @@ configPatches:
     valueFrom:
       secretKeyRef:
         name: {{ $g.redis.passwordSecret }}
-        key: password
+        key: password-json   # JSON-quoted copy (scripts/create-secrets.sh)
 {{- end }}
 {{- end }}
 {{- end -}}

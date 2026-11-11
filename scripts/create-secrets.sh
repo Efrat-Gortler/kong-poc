@@ -25,13 +25,25 @@ copy_secret() { # from_ns name to_ns
   log "copy   $1/$2 -> $3"
 }
 
+# KIC configPatches insert the Secret value as a JSON value, so a string must be stored with its
+# quotes ("abc"); a bare value fails with "could not parse KongPlugin ... invalid state detected".
+# add_json_key ns name key -> adds <key>-json = "<value>" (kept if present)
+add_json_key() {
+  local ns=$1 name=$2 key=$3 v
+  if [[ -n "$(oc get secret "$name" -n "$ns" -o jsonpath="{.data.${key}-json}")" ]]; then return; fi
+  v="$(secret_value "$ns" "$name" "$key")"
+  oc patch secret "$name" -n "$ns" --type merge \
+    -p "{\"data\":{\"${key}-json\":\"$(printf '"%s"' "$v" | base64 -w0)\"}}" >/dev/null
+  log "add    $ns/$name key ${key}-json"
+}
+
 # Shared Redis password: in gw-shared, copied to each leg (plugins read it via configPatches)
 ensure_secret gw-shared redis-auth --from-literal=password="$(random_secret)"
-for leg in $(legs); do copy_secret gw-shared redis-auth "$leg"; done
+for leg in $(legs); do copy_secret gw-shared redis-auth "$leg"; add_json_key "$leg" redis-auth password; done
 
 # Gateway -> blocking service reader key (Lua plugin header, OPA bearer token)
 ensure_secret blocking blocklist-reader --from-literal=api-key="$(random_secret)"
-for leg in $(legs); do copy_secret blocking blocklist-reader "$leg"; done
+for leg in $(legs); do copy_secret blocking blocklist-reader "$leg"; add_json_key "$leg" blocklist-reader api-key; done
 
 # Blocking service database
 ensure_secret blocking blocking-db --from-literal=username=blocking --from-literal=password="$(random_secret)"
