@@ -66,7 +66,11 @@ if [[ "$GITOPS" == upstream ]]; then
     done
   fi
   oc apply --server-side --force-conflicts -k "$REPO_ROOT/cluster/kubernetes/argocd" >/dev/null
-  oc wait --for=condition=Established crd/applications.argoproj.io crd/applicationsets.argoproj.io --timeout=60s >/dev/null
+  # a CRD created a moment ago may have no .status yet: `oc wait` then errors instead of waiting
+  for i in $(seq 1 30); do
+    oc wait --for=condition=Established crd/applications.argoproj.io crd/applicationsets.argoproj.io --timeout=60s >/dev/null 2>&1 && break
+    [[ $i == 30 ]] && die "Argo CD CRDs not Established"; sleep 2
+  done
   oc apply --server-side -n openshift-gitops -f "$REPO_ROOT/cluster/kubernetes/argocd/default-project.yaml" >/dev/null
   for d in argocd-repo-server argocd-applicationset-controller argocd-redis; do
     oc rollout status "deploy/$d" -n openshift-gitops --timeout=5m
