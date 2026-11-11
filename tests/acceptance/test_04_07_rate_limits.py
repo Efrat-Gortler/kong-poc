@@ -17,6 +17,9 @@ def reset_route_counters():
 
 
 def reset_user_counters(route: str):
+    """The *-limited test routes use fixed 60 s windows (userLimitWindow: fixed): start inside a
+    fresh window, then clear its counter, so the test cannot straddle a window boundary."""
+    wait_for_fresh_minute(margin=15)
     redis_flush_matching(USER_DB, f"*{route}-user*")
 
 

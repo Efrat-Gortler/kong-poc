@@ -40,6 +40,10 @@ def mode():
 @pytest.mark.parametrize("kind,caller,route,target,control", CASES, ids=[c[0] for c in CASES])
 def test_block_and_unblock_propagation(gslb, blocking, record, mode, kind, caller, route, target, control):
     enforced = 403 if mode in ("lua", "opa", "both-observe") else 200
+    if route == "reports-limited":
+        # test 4 exhausts this route's per-leg limit (20/min); start from zero
+        from test_04_07_rate_limits import reset_route_counters
+        reset_route_counters()
     assert all_legs(gslb, *target, 200), "target not reachable before the test"
 
     block = blocking.create(kind, caller_id=caller, route=route)

@@ -119,3 +119,5 @@ only mirrors it (read-only).
 | `opa run --watch /policy` | plus `--ignore=.*` | a ConfigMap volume also holds the files in hidden `..data` dirs: OPA loaded the policy three times ("multiple default rules") |
 | Argo CD core with laptop memory caps | controller 1536Mi, repo-server 1Gi limits | the application controller was OOMKilled at 448Mi with two legs |
 | BuildConfig with source secret `github-source` | no source secret by default (public repo) | the build pod waited for a Secret that is only created with `GITHUB_TOKEN` |
+| Kong default upstream retries (5) | `konghq.com/retries: "1"` per Service (`kongTimeouts.retries`) | Kong also retries after a read timeout: a slow backend got the request 6 times and the caller waited 6 x 10 s (the OpenShift router cut it at 30 s) |
+| Per-user limit: sliding window everywhere | the test-only routes `users-limited`, `users-limited-2` use `window_type: fixed` (`userLimitWindow`) | a sliding window also counts the previous minute, which Kong caches locally: the tests' Redis reset could not clear it. Real routes stay sliding |

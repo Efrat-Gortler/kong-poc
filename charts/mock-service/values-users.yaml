@@ -12,8 +12,12 @@ kongRoutes:
     service: users
     port: 8080
     userLimitPerMinute: 10
+    # fixed window on the test routes only: a sliding window also counts the previous minute, which
+    # Kong caches locally, so the tests' Redis reset would not clear it. Real routes stay sliding.
+    userLimitWindow: fixed
   - name: users-limited-2
     path: /users/limited2
     service: users
     port: 8080
     userLimitPerMinute: 10
+    userLimitWindow: fixed

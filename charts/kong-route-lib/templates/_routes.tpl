@@ -103,7 +103,7 @@ ordering:
 config:
   limit: [{{ $r.userLimitPerMinute }}]
   window_size: [60]
-  window_type: sliding
+  window_type: {{ $r.userLimitWindow | default "sliding" }}   # tests: fixed (a Redis reset is then a real reset)
   identifier: credential
   namespace: {{ printf "%s-user" $r.name }}
   strategy: redis
@@ -123,11 +123,14 @@ configPatches:
 {{- end }}
 {{- end -}}
 
-{{- /* Service annotations for upstream timeouts (milliseconds) */ -}}
+{{- /* Service annotations for upstream timeouts (milliseconds) and retries.
+Kong's default is 5 retries, also after a read timeout: a slow backend then gets the same request
+up to 6 times and the caller waits 6 x read timeout. 1 retry still covers a pod going away. */ -}}
 {{- define "kong-route-lib.serviceTimeouts" -}}
 {{- with .Values.kongTimeouts }}
 konghq.com/connect-timeout: {{ .connectMs | default 5000 | quote }}
 konghq.com/read-timeout: {{ .readMs | default 60000 | quote }}
 konghq.com/write-timeout: {{ .writeMs | default 60000 | quote }}
+konghq.com/retries: {{ (hasKey . "retries" | ternary .retries 1) | toString | quote }}
 {{- end }}
 {{- end -}}
