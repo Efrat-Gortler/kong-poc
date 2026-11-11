@@ -89,7 +89,7 @@ Kong Konnect **trial** (EU region), linked per leg to a Konnect control plane of
 KIC fetches the Enterprise license from it. Gateways stay DB-less and all config still comes from Git — Konnect
 only mirrors it (read-only).
 
-- **Trial start: _fill in on the day Konnect is linked_ — expires 30 days later.**
+- **Trial start: 2026-11-11 (control planes `poc-leg1`, `poc-leg2`, EU) — expires around 2026-12-11.**
 - Konnect receives configuration metadata from KIC and needs egress from the cluster to `*.konghq.com:443`
   — worth a line to the security team.
 

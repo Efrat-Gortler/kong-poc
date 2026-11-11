@@ -58,6 +58,6 @@ code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${kic_host
 
 LEG_UP="$(tr "[:lower:]" "[:upper:]" <<<"$leg")"   # bash 3 (macOS) has no ${x^^}
 sed -i.bak -E "s/KONNECT_CP_ID_${LEG_UP}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/${cp_id}/; \
-               s/KONNECT_TP_HOST_${LEG_UP}|[a-z0-9]+\.eu\.tp0\.konghq\.com/${tp_host}/g" "$VALUES"
+               s/KONNECT_TP_HOST_${LEG_UP}|[a-z0-9]+\.eu\.tp0?\.konghq\.com/${tp_host}/g" "$VALUES"
 rm -f "$VALUES.bak"
 log "updated ${VALUES#$REPO_ROOT/} - commit and push it"
