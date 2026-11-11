@@ -17,8 +17,8 @@ spec:
                 - path: environments/*.yaml
           - list:
               elements:
-                - { app: kong-plugin-blocklist, path: kong-plugins/blocklist }
-                - { app: opa-policy, path: opa/policy }
+                - { app: kong-plugin-blocklist, dir: kong-plugins/blocklist }
+                - { app: opa-policy, dir: opa/policy }
   template:
     metadata:
       name: '{{ .leg }}-{{ .app }}'
@@ -29,7 +29,7 @@ spec:
       source:
         repoURL: https://github.com/Efrat-Gortler/kong-poc.git
         targetRevision: main
-        path: '{{ .path }}'
+        path: '{{ .dir }}'   # not .path: the git files generator already sets .path (a map)
       destination:
         server: https://kubernetes.default.svc
         namespace: '{{ .leg }}'
