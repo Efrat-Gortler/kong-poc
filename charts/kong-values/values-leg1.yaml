@@ -7,8 +7,8 @@ controller:
     env:
       gateway_api_controller_name: konghq.com/kic-gateway-controller-leg1
     konnect:
-      controlPlaneID: "KONNECT_CP_ID_LEG1"
+      controlPlaneID: "c189fdf3-4bcf-4dce-a508-b770e1b69ba7"
 gateway:
   env:
-    cluster_telemetry_endpoint: "KONNECT_TP_HOST_LEG1:443"
-    cluster_telemetry_server_name: "KONNECT_TP_HOST_LEG1"
+    cluster_telemetry_endpoint: "a80241c710.eu.tp.konghq.com:443"
+    cluster_telemetry_server_name: "a80241c710.eu.tp.konghq.com"
