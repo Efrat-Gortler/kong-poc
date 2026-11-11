@@ -10,6 +10,7 @@ Each item: what the POC assumed, and what must be checked.
 - [ ] **System tokens**: which claim identifies the application (`appid`, `client_id`, …). POC simulates a
       unified claim `caller_id` (= `upn` for users, client id for system tokens): ask ADFS for this claim rule.
 - [ ] Behaviour of Kong when `caller_id` is missing — see TEST-REPORT test 3.
+- [ ] Wrong `aud`: openid-connect answers **403** `insufficient_scope` (audience_required is an authorization check), not 401. Confirm clients treat both as "token rejected".
 - [ ] JWKS rotation: Kong caches keys; confirm rollover handling with ADFS's signing-certificate rollover.
 
 ## Rate limiting / Redis

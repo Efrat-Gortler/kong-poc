@@ -8,7 +8,7 @@ Kong Gateway `<version>`, KIC `3.5.14`. Date: `<date>`.
 | # | Test | Result | Notes |
 |---|---|---|---|
 | 1 | Routing, round robin over all legs | | distribution: |
-| 2 | Auth: none / garbage / bad signature / forged claim / wrong issuer / wrong audience / expired → 401; user & system → 200 | | |
+| 2 | Auth: none / garbage / bad signature / forged claim / wrong issuer / expired → 401; wrong audience → 403 (`insufficient_scope`); user & system → 200 | | |
 | 3 | Token without `caller_id` | documented | observed: |
 | 4 | Route-wide limit per leg | | |
 | 5 | Per-user limit shared across legs; separate per user, per route; shared across a user's tokens | | |

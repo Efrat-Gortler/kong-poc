@@ -46,10 +46,14 @@ def test_wrong_issuer_401(gslb, tokens):
     assert gslb.request("/orders/1", token=tok).status_code == 401
 
 
-def test_wrong_audience_401(gslb, tokens):
+def test_wrong_audience_403(gslb, tokens):
+    # Valid signature and issuer, wrong audience. openid-connect checks audience_required as an
+    # authorization step: 403 + error="insufficient_scope" (not 401). Rejected before any upstream.
     tok = tokens.get("other-app")
     assert "api://kong-gateway" not in json.dumps(jwt_claims(tok).get("aud"))
-    assert gslb.request("/orders/1", token=tok).status_code == 401
+    r = gslb.request("/orders/1", token=tok)
+    assert r.status_code == 403
+    assert 'error="insufficient_scope"' in r.headers.get("www-authenticate", "")
 
 
 @pytest.mark.slow

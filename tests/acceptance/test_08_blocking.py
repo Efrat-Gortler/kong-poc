@@ -80,7 +80,9 @@ def test_blocked_request_does_not_consume_quota(gslb, blocking, mode):
     reset_user_counters("users-limited")
     b = blocking.create("user", caller_id="777danag@corp.local")
     try:
-        wait_until(lambda: all_legs(gslb, "777danag", "/users/limited/x", 403), timeout=60, interval=0.25)
+        # poll on another route: until the block reaches every leg the polls get 200 and would use
+        # this route's quota (a user block covers all routes)
+        wait_until(lambda: all_legs(gslb, "777danag", "/orders/1", 403), timeout=60, interval=0.25)
         for _ in range(15):
             assert gslb.request("/users/limited/x", who="777danag").status_code == 403
     finally:
