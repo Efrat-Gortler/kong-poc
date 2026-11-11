@@ -1,20 +1,16 @@
 component: orders
+# One general route per component; exception routes only where a threshold differs.
 kongRoutes:
-- name: orders
-  path: /orders
-  service: orders
-  port: 8080
-  routeLimitPerSecond: 400
-  userLimitPerMinute: 100
-- name: orders-create
-  path: /orders
-  method: POST
-  service: orders
-  port: 8080
-  routeLimitPerSecond: 200
-  userLimitPerMinute: 30
-- name: orders-gitops-probe
-  path: /orders-probe
-  service: orders
-  port: 8080
-  userLimitPerMinute: 7
+  - name: orders
+    path: /orders
+    service: orders
+    port: 8080
+    routeLimitPerSecond: 400
+    userLimitPerMinute: 100
+  - name: orders-create          # exception: POST has its own thresholds
+    path: /orders
+    method: POST
+    service: orders
+    port: 8080
+    routeLimitPerSecond: 200
+    userLimitPerMinute: 30
