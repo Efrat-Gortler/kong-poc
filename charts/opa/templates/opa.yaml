@@ -55,6 +55,9 @@ spec:
             - --diagnostic-addr=0.0.0.0:8282
             - --config-file=/config/config.yaml
             - --watch            # reload the policy when the ConfigMap changes
+            # a ConfigMap volume holds every file twice more in hidden dirs (..data, ..<timestamp>);
+            # without this OPA loads the policy three times ("multiple default rules")
+            - --ignore=.*
             - /policy
           env:
             - name: BLOCKLIST_READER_KEY
