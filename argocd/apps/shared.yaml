@@ -10,10 +10,11 @@ metadata:
 spec:
   project: kong-poc
   source:
-    # Kong CRDs (KongPlugin, KongClusterPlugin, ...) matching KIC 3.5.14.
-    repoURL: https://github.com/Kong/kubernetes-ingress-controller
-    targetRevision: v3.5.14
-    path: config/crd
+    # Kong CRDs (KongPlugin, KongClusterPlugin, ...) of KIC 3.5.14, vendored in this repo
+    # (fetching the whole KIC repo with its tags timed out in the repo-server).
+    repoURL: https://github.com/Efrat-Gortler/kong-poc.git
+    targetRevision: main
+    path: cluster/crds/kong
   destination:
     server: https://kubernetes.default.svc
     namespace: gw-shared   # CRDs are cluster-scoped; the AppProject only allows listed namespaces
