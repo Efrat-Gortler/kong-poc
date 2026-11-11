@@ -41,6 +41,9 @@ trap 'set_mode "$original"' EXIT
 for mode in lua opa; do
   set_mode "$mode"
   pytest tests/acceptance/test_08_blocking.py -v
+  # result files are named per test, not per mode: keep each mode's copy
+  mkdir -p "tests/results/$mode"
+  cp tests/results/test_block_and_unblock_propagation*.json tests/results/test_expiring_block_lifts_itself.json "tests/results/$mode/"
   MODE="$mode" k6 run --quiet tests/load/latency.js --summary-export "tests/results/latency-$mode.json"
 done
 set_mode off
