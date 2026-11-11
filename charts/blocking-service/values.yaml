@@ -14,7 +14,8 @@ build:
   gitUri: https://github.com/Efrat-Gortler/kong-poc.git
   gitRef: main
   contextDir: services/blocking-service
-  sourceSecret: github-source       # basic-auth Secret (GitHub token) for the private repo
+  # public repo: no secret. Private repo: "github-source" (created by scripts/create-secrets.sh from GITHUB_TOKEN)
+  sourceSecret: ""
   imageTag: poc
 
 hostPrefix: blocking-blocking   # Swagger UI at <hostPrefix>.<global.appsDomain>/swagger
