@@ -20,25 +20,14 @@ in `tests/acceptance` and compare two blocking mechanisms (Lua plugin vs OPA).
 - **The user's Windows browser** reaches the console/routes via hosts entries (`scripts/windows/hosts-crc.cmd`,
   firewall allows 188.64.206.0/24 on 80/443/6443/22).
 
-## Status when this was written
-- Done: all code, charts, scripts, tests, docs; charts render for both platforms; Lua unit tests pass;
-  the mini token issuer was verified; VM created; OKD installation started.
-- Next, in order:
-  1. Confirm `crc status` is Running and `oc get nodes` Ready (`tail ~/crc-setup.log`).
-  2. User runs `hosts-crc.cmd` on Windows (admin); console: https://console-openshift-console.apps-crc.testing
-     (`crc console --credentials` prints kubeadmin — never paste it into chats or files).
-  3. `oc login -u kubeadmin https://api.crc.testing:6443`
-  4. `gh auth login` (device flow; the user has no smartphone — use the browser code flow).
-  5. `read -rs KONNECT_TOKEN && export KONNECT_TOKEN` (the user types it; never echo/store it), then
-     `scripts/bootstrap.sh`. On OKD there is no OpenShift GitOps operator, so bootstrap installs upstream
-     Argo CD core (nonroot-v2 SCC for its SAs). It creates Konnect control planes `poc-leg1/2` (EU) and
-     commits their IDs. **The Konnect 30-day trial effectively starts here — note the date in README.md.**
-  6. Watch `oc get applications -n openshift-gitops`; verify `scripts/kong-admin.sh <leg> / | jq .license` per leg before Enterprise plugins.
-  7. Tests: `~/.venv/bin/pytest tests/acceptance -v`, then `-m destructive`, `ALLOW_GIT_PUSH=1 -m gitops`,
-     then `tests/acceptance/run-blocking-comparison.sh` (needs k6). Fill `docs/TEST-REPORT.md`.
-- Expect first-run issues to fix in Git (never by hand in the cluster): exact Kong image patch tag,
-  plugin field names for the installed Kong version (`/schemas/plugins/<name>`), SCC/securityContext
-  details, Gateway API CRD versions on OKD. Record deviations in README.md.
+## Status (2026-11-11)
+- Done: OKD up (lingering + `crc-autostart` user unit, HAProxy for 6443 only), bootstrap, Konnect (trial
+  from 2026-11-11), all Argo CD apps Synced/Healthy, all 13 tests pass (`pytest tests/acceptance`, `-m destructive`,
+  `-m gitops`, `run-blocking-comparison.sh`), `docs/TEST-REPORT.md` filled with a recommendation (Lua plugin).
+- First-run fixes are listed in README "Deviations". `scripts/kong-admin.sh <leg> <path>` reads a leg's Admin API.
+- Open decisions for the user: TEST-REPORT findings 1 (tokens without `caller_id`) and 2 (client identity
+  headers reach upstreams); make the repo private; rename the test users.
+- Daily: Cloud Shell `bash scripts/gcp/vm.sh start`; OpenShift comes back by itself (~10 min).
 
 ## Rules carried over
 - No secrets in Git, files, logs or chat (Konnect PAT, GitHub tokens, kubeadmin, pull secrets).
