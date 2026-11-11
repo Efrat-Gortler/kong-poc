@@ -22,17 +22,18 @@ patches:
       - op: replace
         path: /subjects/0/namespace
         value: openshift-gitops
-  # memory caps for an 8 GB laptop
+  # memory caps: small enough for the 8 GB laptop with one leg; the controller OOMed at 448Mi
+  # with two legs on OpenShift (GCP VM), so it and the repo-server get more headroom
   - target: { kind: StatefulSet, name: argocd-application-controller }
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/resources
-        value: { requests: { cpu: 100m, memory: 192Mi }, limits: { memory: 448Mi } }
+        value: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 1536Mi } }
   - target: { kind: Deployment, name: argocd-repo-server }
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/resources
-        value: { requests: { cpu: 50m, memory: 96Mi }, limits: { memory: 320Mi } }
+        value: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 1Gi } }
   - target: { kind: Deployment, name: argocd-applicationset-controller }
     patch: |-
       - op: add
