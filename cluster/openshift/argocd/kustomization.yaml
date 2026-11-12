@@ -1,0 +1,31 @@
+# Argo CD on OpenShift/OKD without the OpenShift GitOps operator: the core install of
+# cluster/kubernetes/argocd plus the UI/API server (argocd-server), exposed by an edge Route.
+# Applied by scripts/bootstrap.sh (platform openshift, no operator):
+#   oc apply --server-side --force-conflicts -k cluster/openshift/argocd
+# Login: user admin, password: oc get secret argocd-initial-admin-secret -n openshift-gitops -o jsonpath='{.data.password}' | base64 -d
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: openshift-gitops
+resources:
+  - ../../kubernetes/argocd
+  - argocd-server-v3.5.7.yaml
+  - route.yaml
+patches:
+  # cluster-wide read permissions of the UI point at our namespace
+  - target: { kind: ClusterRoleBinding, name: argocd-server }
+    patch: |-
+      - op: replace
+        path: /subjects/0/namespace
+        value: openshift-gitops
+  - target: { kind: Deployment, name: argocd-server }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value: { requests: { cpu: 20m, memory: 64Mi }, limits: { memory: 256Mi } }
+  # TLS ends at the Route (edge); the server speaks plain HTTP inside the cluster.
+  # Merged after the base patch that sets the other argocd-cmd-params-cm keys.
+  - target: { kind: ConfigMap, name: argocd-cmd-params-cm }
+    patch: |-
+      - op: add
+        path: /data/server.insecure
+        value: "true"

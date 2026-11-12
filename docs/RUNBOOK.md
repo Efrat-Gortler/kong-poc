@@ -207,6 +207,6 @@ Results: `tests/results/*.json` → `docs/TEST-REPORT.md`.
 | Reload Lua plugin code | push, then `oc rollout restart deploy/kong-<leg>-gateway -n <leg>` (code, not config) |
 | Add a leg | `scripts/add-leg.sh leg3` → commit, push → `scripts/bootstrap.sh` |
 | Keycloak admin | `https://keycloak-idp.apps-crc.testing/admin` — `oc get secret keycloak-admin -n idp -o jsonpath='{.data.password}' \| base64 -d` |
-| ArgoCD UI | `oc get route openshift-gitops-server -n openshift-gitops` — log in with OpenShift |
+| ArgoCD UI | `oc get route openshift-gitops-server -n openshift-gitops`. Operator: log in with OpenShift. Upstream (OKD): user `admin`, password `oc get secret argocd-initial-admin-secret -n openshift-gitops -o jsonpath='{.data.password}' \| base64 -d; echo` |
 | Konnect trial ending | new trial or a `license.json` → `KongLicense` resource (see OPEN-QUESTIONS) |
 | Stop / start CRC | `crc stop` / `crc start` (state is kept; Keycloak re-imports the realms) |

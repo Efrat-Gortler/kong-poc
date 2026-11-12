@@ -10,7 +10,8 @@
 # Steps (each asks before cluster-wide changes; ASSUME_YES=1 to skip prompts):
 #   1. checks: cluster-admin; OpenShift: Gateway API CRDs present (managed by the platform)
 #   2. namespaces (+ leg label; Pod Security "restricted" warnings on kubernetes)
-#   3. GitOps: OpenShift GitOps operator | minimal upstream Argo CD (cluster/kubernetes/argocd)
+#   3. GitOps: OpenShift GitOps operator | upstream Argo CD: core (cluster/kubernetes/argocd), on
+#      OpenShift/OKD plus the UI and a Route (cluster/openshift/argocd)
 #   4. Secrets (scripts/create-secrets.sh) and Konnect link per leg (scripts/konnect-setup.sh)
 #   5. the ArgoCD root application
 source "$(dirname "$0")/lib.sh"
@@ -56,23 +57,27 @@ log "    GitOps engine: $GITOPS"
 if [[ "$GITOPS" == upstream ]]; then
   log "3/5 Argo CD (minimal core install, namespace openshift-gitops)"
   if ! oc get deploy argocd-repo-server -n openshift-gitops >/dev/null 2>&1; then
-    confirm "Install Argo CD v3.5.7 (core: no UI) into this cluster?" || die "aborted"
+    confirm "Install Argo CD v3.5.7 (core; on OpenShift with the UI) into this cluster?" || die "aborted"
   fi
   if [[ "$POC_PLATFORM" == openshift ]]; then
     # OKD/OpenShift: upstream Argo CD images run as UID 999 -> allow the nonroot-v2 SCC for its service accounts
     oc get ns openshift-gitops >/dev/null 2>&1 || oc create ns openshift-gitops >/dev/null
-    for sa in argocd-application-controller argocd-applicationset-controller argocd-repo-server argocd-redis default; do
+    for sa in argocd-application-controller argocd-applicationset-controller argocd-repo-server argocd-redis argocd-server default; do
       oc adm policy add-scc-to-user nonroot-v2 -z "$sa" -n openshift-gitops >/dev/null
     done
   fi
-  oc apply --server-side --force-conflicts -k "$REPO_ROOT/cluster/kubernetes/argocd" >/dev/null
+  ARGOCD_KUSTOMIZE="$REPO_ROOT/cluster/kubernetes/argocd"
+  [[ "$POC_PLATFORM" == openshift ]] && ARGOCD_KUSTOMIZE="$REPO_ROOT/cluster/openshift/argocd"   # + UI, Route
+  oc apply --server-side --force-conflicts -k "$ARGOCD_KUSTOMIZE" >/dev/null
   # a CRD created a moment ago may have no .status yet: `oc wait` then errors instead of waiting
   for i in $(seq 1 30); do
     oc wait --for=condition=Established crd/applications.argoproj.io crd/applicationsets.argoproj.io --timeout=60s >/dev/null 2>&1 && break
     [[ $i == 30 ]] && die "Argo CD CRDs not Established"; sleep 2
   done
   oc apply --server-side -n openshift-gitops -f "$REPO_ROOT/cluster/kubernetes/argocd/default-project.yaml" >/dev/null
-  for d in argocd-repo-server argocd-applicationset-controller argocd-redis; do
+  ARGOCD_DEPLOYS="argocd-repo-server argocd-applicationset-controller argocd-redis"
+  [[ "$POC_PLATFORM" == openshift ]] && ARGOCD_DEPLOYS+=" argocd-server"
+  for d in $ARGOCD_DEPLOYS; do
     oc rollout status "deploy/$d" -n openshift-gitops --timeout=5m
   done
   oc rollout status statefulset/argocd-application-controller -n openshift-gitops --timeout=5m
@@ -131,5 +136,10 @@ log "done. Watch: oc get applications -n openshift-gitops -w"
 if [[ "$GITOPS" == operator ]]; then
   log "ArgoCD UI: https://$(oc get route openshift-gitops-server -n openshift-gitops -o jsonpath='{.spec.host}')"
 else
-  log "ArgoCD UI on demand: scripts/k3d/ui.sh argocd   (Applications are also visible in the console: Home > API Explorer > Application)"
+  if [[ "$POC_PLATFORM" == openshift ]]; then
+    log "ArgoCD UI: https://$(oc get route openshift-gitops-server -n openshift-gitops -o jsonpath='{.spec.host}')  (user admin)"
+    log "  password: oc get secret argocd-initial-admin-secret -n openshift-gitops -o jsonpath='{.data.password}' | base64 -d; echo"
+  else
+    log "ArgoCD UI on demand: scripts/k3d/ui.sh argocd   (Applications are also visible in the console: Home > API Explorer > Application)"
+  fi
 fi

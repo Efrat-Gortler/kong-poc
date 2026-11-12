@@ -1,0 +1,17 @@
+# Argo CD UI: https://openshift-gitops-server-openshift-gitops.<appsDomain>
+# (same name and host as the OpenShift GitOps operator's route, so docs and hosts entries fit both)
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: openshift-gitops-server
+  labels:
+    app.kubernetes.io/part-of: kong-poc
+spec:
+  to:
+    kind: Service
+    name: argocd-server
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
