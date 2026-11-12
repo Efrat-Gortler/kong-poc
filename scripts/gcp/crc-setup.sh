@@ -102,6 +102,11 @@ systemctl --user enable crc-autostart.service >/dev/null 2>&1
 log "6/6 tools for the POC scripts (oc, helm, python venv, gh)"
 eval "$(crc oc-env)"
 grep -q 'crc oc-env' ~/.bashrc || echo 'eval "$(crc oc-env)"' >> ~/.bashrc
+# `crc stop` (at shutdown) removes the crc-admin context from ~/.kube/config, and `crc start` at boot
+# often cannot re-add it (OAuth not up yet; its token also expires after 24 h). Fall back to CRC's own
+# certificate-based admin kubeconfig; an explicit `oc login` (written to ~/.kube/config) still wins.
+grep -q '.crc/machines/crc/kubeconfig' ~/.bashrc \
+  || echo 'export KUBECONFIG="$HOME/.kube/config:$HOME/.crc/machines/crc/kubeconfig"' >> ~/.bashrc
 if ! command -v helm >/dev/null; then
   v=v3.22.1; tmp="$(mktemp -d)"
   curl -fsSL "https://get.helm.sh/helm-$v-linux-amd64.tar.gz" -o "$tmp/h.tgz"
