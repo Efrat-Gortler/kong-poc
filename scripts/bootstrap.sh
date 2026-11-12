@@ -127,7 +127,17 @@ if [[ -n "${KONNECT_TOKEN:-}" ]]; then
     grep -q KONNECT_CP_ID_ "$REPO_ROOT/charts/kong-values/values-$leg.yaml" && die "$leg still has a KONNECT_CP_ID placeholder"
   done
 else
-  warn "KONNECT_TOKEN not set: skipped Konnect. Kong will run without Enterprise plugins until it is done."
+  missing=""
+  for leg in $(legs); do
+    if grep -q KONNECT_CP_ID_ "$REPO_ROOT/charts/kong-values/values-$leg.yaml" || ! oc get secret konnect-client-tls -n "$leg" >/dev/null 2>&1; then
+      missing+=" $leg"
+    fi
+  done
+  if [[ -n "$missing" ]]; then
+    warn "KONNECT_TOKEN not set: skipped Konnect for$missing. Kong runs without Enterprise plugins there until it is done."
+  else
+    log "    Konnect already linked for every leg (control plane IDs in Git, client certificates present)"
+  fi
 fi
 
 log "5/5 ArgoCD root application"
