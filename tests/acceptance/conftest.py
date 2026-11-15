@@ -135,16 +135,31 @@ class Blocking:
     def _h(self):
         return {"Authorization": f"Bearer {self.tokens.get('opsadmin')}"}
 
-    def create(self, kind: str, caller_id: str | None = None, route: str | None = None,
-               reason: str = "acceptance test", ttl: int | None = None) -> dict:
-        body = {"kind": kind, "reason": reason}
-        if caller_id:
-            body["callerId"] = caller_id
-        if route:
+    def body(self, subject_type: str, subject_id: str | None = None, route: str | None = None,
+             reason: str = "acceptance test", ttl: int | None = None) -> dict:
+        """A block = WHO (subject) + WHERE (route; None = all routes)."""
+        subject = {"type": subject_type}
+        if subject_id is not None:
+            subject["id"] = subject_id
+        body = {"subject": subject, "reason": reason}
+        if route is not None:
             body["route"] = route
         if ttl:
             body["ttlSeconds"] = ttl
-        r = requests.post(f"{BLOCKING_URL}/api/blocks", json=body, headers=self._h(), verify=False, timeout=10)
+        return body
+
+    def list(self, include_inactive: bool = False) -> list[dict]:
+        r = requests.get(f"{BLOCKING_URL}/api/blocks", params={"includeInactive": str(include_inactive).lower()},
+                         headers=self._h(), verify=False, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
+    def post_raw(self, body) -> requests.Response:
+        return requests.post(f"{BLOCKING_URL}/api/blocks", json=body, headers=self._h(), verify=False, timeout=10)
+
+    def create(self, subject_type: str, subject_id: str | None = None, route: str | None = None,
+               reason: str = "acceptance test", ttl: int | None = None) -> dict:
+        r = self.post_raw(self.body(subject_type, subject_id, route, reason, ttl))
         assert r.status_code == 201, r.text
         return r.json()
 

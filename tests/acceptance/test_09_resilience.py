@@ -28,7 +28,7 @@ def pause_argocd_selfheal(app: str, pause: bool):
 @pytest.mark.destructive
 def test_blocking_service_down_keeps_existing_blocks(gslb, blocking, record):
     mode = blocking_mode()
-    b = blocking.create("user", caller_id="666efratg@corp.local", reason="resilience test")
+    b = blocking.create("user", "666efratg@corp.local", reason="resilience test")
     wait_until(lambda: all(gslb.request("/orders/1", who="666efratg", leg=l).status_code == 403 for l in LEGS),
                timeout=60, interval=0.5)
     pause_argocd_selfheal("blocking-service", True)
@@ -40,7 +40,7 @@ def test_blocking_service_down_keeps_existing_blocks(gslb, blocking, record):
         still_blocked = {l: gslb.request("/orders/1", who="666efratg", leg=l).status_code for l in LEGS}
         others_ok = {l: gslb.request("/orders/1", who="normaluser", leg=l).status_code for l in LEGS}
         try:
-            r = requests.post(f"{BLOCKING_URL}/api/blocks", json={"kind": "user", "callerId": "x", "reason": "x"},
+            r = requests.post(f"{BLOCKING_URL}/api/blocks", json=blocking.body("user", "x", reason="x"),
                               headers={"Authorization": f"Bearer {blocking.tokens.get('opsadmin')}"},
                               verify=False, timeout=10)
             create_status = r.status_code

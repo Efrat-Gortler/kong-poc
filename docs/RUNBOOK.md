@@ -165,7 +165,7 @@ oc logs -n blocking -f bc/blocking-service
 oc rollout status -n blocking deploy/blocking-service
 ```
 Swagger: `https://blocking-blocking.apps-crc.testing/swagger` → *Authorize* → paste `scripts/get-token.sh opsadmin`.
-CLI: `scripts/block.sh user 666efratg@corp.local "test" 60`, `scripts/block.sh list`.
+CLI: `scripts/block.sh add user 666efratg@corp.local '*' "test" 60`, `scripts/block.sh add everyone - orders-create "backend failure"`, `scripts/block.sh list`.
 
 ## Phase 7–8 — Lua plugin and OPA
 

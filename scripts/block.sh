@@ -1,30 +1,31 @@
 #!/usr/bin/env bash
 # Command-line client for the blocking service (same API as the Swagger UI).
-#   scripts/block.sh list
-#   scripts/block.sh user          666efratg@corp.local "abnormal request volume" [ttlSeconds]
-#   scripts/block.sh system_token  reports-service      "token leaked"            [ttlSeconds]
-#   scripts/block.sh route         orders-create        "backend failure"         [ttlSeconds]
-#   scripts/block.sh user_on_route 777danag@corp.local orders-create "reason"     [ttlSeconds]
+# A block = WHO (subject type + id) + WHERE (a route, or * = all routes).
+#   scripts/block.sh add user     666efratg@corp.local '*'           "abnormal request volume" [ttlSeconds]
+#   scripts/block.sh add user     777danag@corp.local  orders-create "duplicate orders"
+#   scripts/block.sh add system   reports-service      '*'           "runaway batch job"
+#   scripts/block.sh add token    <jti>                '*'           "token leaked"            300
+#   scripts/block.sh add everyone -                    orders-create "backend failure"
+#   scripts/block.sh list | routes | audit
 #   scripts/block.sh unblock <id>
-#   scripts/block.sh audit
+# Everyone on all routes is rejected (400). Token jti: scripts/get-token.sh <who> | cut -d. -f2 | base64 -d
 source "$(dirname "$0")/lib.sh"
 need curl jq
 TOKEN="${TOKEN:-$("$REPO_ROOT/scripts/get-token.sh" opsadmin)}"
 api() { "${CURL[@]}" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
-ttl_json() { [[ -n "${1:-}" ]] && echo ", \"ttlSeconds\": $1" || true; }
 
 case "${1:-}" in
-  list)   api "$BLOCKING_URL/api/blocks" | jq . ;;
-  audit)  api "$BLOCKING_URL/api/audit" | jq . ;;
+  list)    api "$BLOCKING_URL/api/blocks" | jq . ;;
+  routes)  api "$BLOCKING_URL/api/routes" | jq -r '.[]' ;;
+  audit)   api "$BLOCKING_URL/api/audit" | jq . ;;
   unblock) api -X DELETE "$BLOCKING_URL/api/blocks/${2:?id}" && echo "unblocked $2" ;;
-  user|system_token)
-    api -X POST "$BLOCKING_URL/api/blocks" \
-      -d "{\"kind\":\"$1\",\"callerId\":\"${2:?caller_id}\",\"reason\":\"${3:?reason}\"$(ttl_json "${4:-}")}" | jq . ;;
-  route)
-    api -X POST "$BLOCKING_URL/api/blocks" \
-      -d "{\"kind\":\"route\",\"route\":\"${2:?route}\",\"reason\":\"${3:?reason}\"$(ttl_json "${4:-}")}" | jq . ;;
-  user_on_route)
-    api -X POST "$BLOCKING_URL/api/blocks" \
-      -d "{\"kind\":\"user_on_route\",\"callerId\":\"${2:?caller_id}\",\"route\":\"${3:?route}\",\"reason\":\"${4:?reason}\"$(ttl_json "${5:-}")}" | jq . ;;
-  *) sed -n '2,9p' "$0"; exit 1 ;;
+  add)
+    type="${2:?type: user | system | token | everyone}"; id="${3:?id (- for everyone)}"
+    route="${4:?route (* = all routes)}"; reason="${5:?reason}"; ttl="${6:-}"
+    body="$(jq -n --arg t "$type" --arg i "$id" --arg r "$route" --arg why "$reason" --arg ttl "$ttl" '
+      {subject: ({type: $t} + (if $i == "-" then {} else {id: $i} end)), reason: $why}
+      + (if $r == "*" then {} else {route: $r} end)
+      + (if $ttl == "" then {} else {ttlSeconds: ($ttl | tonumber)} end)')"
+    api -X POST "$BLOCKING_URL/api/blocks" -d "$body" | jq . ;;
+  *) sed -n '2,12p' "$0"; exit 1 ;;
 esac
