@@ -5,3 +5,12 @@ global:
   appsDomain: localtest.me
   ingressScheme: http
   ingressClass: traefik
+  # Which tokens are SYSTEM tokens (blocking subject type "system"; all others are users).
+  # A property of the token issuer, read by the Lua blocklist plugin and by OPA alike.
+  # A token is a system token when it carries `claim` and, if `values` is not empty, one of them.
+  # POC (Keycloak, mini issuer): client_id is only in client-credentials tokens.
+  # Production (ADFS): to be confirmed - docs/OPEN-QUESTIONS.md.
+  auth:
+    systemToken:
+      claim: client_id
+      values: []

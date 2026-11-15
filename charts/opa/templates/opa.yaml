@@ -26,6 +26,16 @@ data:
     status:
       console: true
 ---
+# data.blocking_config for the Rego policy (same setting as the Lua plugin: global.auth.systemToken)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-blocking-config
+data:
+  data.json: |
+    {{- $st := ((.Values.global.auth).systemToken) | default dict }}
+    {"blocking_config": {"system_claim": {{ $st.claim | default "client_id" | toJson }}, "system_claim_values": {{ $st.values | default list | toJson }}}}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -59,6 +69,7 @@ spec:
             # without this OPA loads the policy three times ("multiple default rules")
             - --ignore=.*
             - /policy
+            - /blocking-config        # data.json -> data.blocking_config
           env:
             - name: BLOCKLIST_READER_KEY
               valueFrom:
@@ -82,11 +93,14 @@ spec:
           volumeMounts:
             - { name: config, mountPath: /config, readOnly: true }
             - { name: policy, mountPath: /policy, readOnly: true }
+            - { name: blocking-config, mountPath: /blocking-config, readOnly: true }
       volumes:
         - name: config
           configMap: { name: opa-config }
         - name: policy
           configMap: { name: opa-policy }
+        - name: blocking-config
+          configMap: { name: opa-blocking-config }
 ---
 apiVersion: v1
 kind: Service

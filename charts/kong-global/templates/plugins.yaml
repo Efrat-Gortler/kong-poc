@@ -56,6 +56,10 @@ config:
   fail_open: {{ .Values.blocking.failOpen }}
   observe_only: {{ eq .Values.blocking.mode "both-observe" }}
   leg: {{ $leg | quote }}
+  {{- with ((.Values.global.auth).systemToken) }}
+  system_claim: {{ .claim | quote }}
+  system_claim_values: {{ .values | default list | toJson }}
+  {{- end }}
 configPatches:
   - path: /api_key
     valueFrom:

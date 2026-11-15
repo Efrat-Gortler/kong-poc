@@ -188,6 +188,9 @@ class Realm:
             "typ": "Bearer", "azp": client_id, "scope": "openid" if user else "profile",
             "preferred_username": subject,
         }
+        if not user:
+            # like Keycloak: only client-credentials tokens carry client_id (marks system tokens)
+            claims["client_id"] = client_id
         audiences: list[str] = []
         for m in client.get("protocolMappers", []):
             cfg = m.get("config", {})
