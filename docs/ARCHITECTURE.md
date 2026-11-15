@@ -43,7 +43,7 @@ flowchart LR
 |---|---|---|---|
 | 1 | GSLB | round robin to a leg (or pinned by `x-gslb-leg` in tests) | drained leg gets nothing |
 | 2 | `openid-connect` (1050) | verifies signature (JWKS, cached), `exp`, `iss`, `aud`; `caller_id` claim becomes the authenticated credential; sets upstream `x-caller-id` | 401 |
-| 3 | `blocklist` (1000) — Lua mode | in-memory lookup: route / caller / caller+route | 403 generic body |
+| 3 | `blocklist` (1000) — Lua mode | in-memory lookup of at most 5 rule keys (see "Block model") | 403 generic body |
 | 3' | `opa` (920) — OPA mode | local call to the leg's OPA | 403 (OPA down → 500) |
 | 4 | `rate-limiting-advanced` (910, ordered first) | per caller, sliding 60 s, Redis DB 0, namespace `<route>-user` → **one counter for all legs** | 429 |
 | 5 | `rate-limiting` (910) | route-wide, Redis DB = leg number → **per leg** | 429 (Redis down → let through, `fault_tolerant`) |
@@ -59,6 +59,33 @@ A blocked request (step 3) never reaches step 4/5, so it consumes no quota (acce
 | per caller on a route | `rate-limiting-advanced` | 0 (all legs) | explicit `namespace` `<route>-user` + caller | shared across legs, exact |
 | route-wide | `rate-limiting` | 1, 2, … (one per leg) | route/service IDs (no namespace option) | per leg; in real clusters the IDs would be identical, so the DB is what separates them |
 
+## Block model
+
+A block = **WHO** (`subject`) + **WHERE** (`route`). Every combination is valid except everyone on all routes.
+
+| `subject.type` | `subject.id` | one route | all routes (`route` omitted) |
+|---|---|---|---|
+| `user` | caller_id (upn) | ✔ | ✔ |
+| `system` | caller_id (client id of a client-credentials token) | ✔ | ✔ |
+| `token` | the token's `jti` (e.g. a leaked token) | ✔ | ✔ |
+| `everyone` | — | ✔ | ✘ 400 |
+
+User or system: a token is a **system** token when it carries the claim `global.auth.systemToken.claim`
+(POC: `client_id`, which Keycloak puts only into client-credentials tokens) and, if
+`global.auth.systemToken.values` is not empty, has one of those values. One setting in
+`cluster/values-<platform>.yaml` feeds both the Lua plugin and OPA.
+
+The blocking service publishes the active blocks as **rule keys** `type:id@route` (`@*` = all routes,
+`everyone:*@route`), as an object `rules: {key: blockId}` in `/api/blocklist` and in the OPA bundle
+(`data.blocklist.rules`). Per request a gateway builds at most 5 keys and looks each up directly:
+
+```
+everyone:*@<route>      <type>:<caller_id>@<route>      <type>:<caller_id>@*      token:<jti>@<route>      token:<jti>@*
+```
+
+A `user` rule never hits a system token with the same id, and vice versa. A token rule needs no caller_id,
+so it also works for tokens without the `caller_id` claim.
+
 ## Blocking: two mechanisms side by side
 
 | | Lua `blocklist` | Kong `opa` + OPA per leg |
@@ -68,7 +95,8 @@ A blocked request (step 3) never reaches step 4/5, so it consumes no quota (acce
 | Blocking service down | keeps last list | keeps last bundle |
 | Before first list | `fail_open` (default 503) | policy allows (no data) |
 | OPA down | — | 500 for every request (fail closed) |
-| Identity | OIDC credential (`kong.client.get_credential().id`) | decodes the already verified JWT (`io.jwt.decode`) |
+| Identity | caller_id = OIDC credential (`kong.client.get_credential().id`); user/system and `jti` decoded from the already verified JWT | caller_id, user/system and `jti` decoded from the already verified JWT (`io.jwt.decode`) |
+| System-token rule | `system_claim` / `system_claim_values` in the plugin config | `data.blocking_config` (ConfigMap `opa-blocking-config`) |
 | Moving parts | plugin code (ConfigMap) | OPA Deployment + Rego (ConfigMap) |
 
 Switch with `blocking.mode` in `charts/kong-global/values.yaml`: `lua` | `opa` | `both-observe` (OPA enforces,

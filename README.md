@@ -14,7 +14,7 @@ Background and decisions: `kong-gateway-context-en.md` and `kong-design-email.do
 | 2–3 | JWT auth (signature, expiry, issuer, audience), no Kong Consumer per user | `charts/kong-global` (openid-connect, `credential_claim: caller_id`) |
 | 4 | Route-wide limit **per leg** | `rate-limiting`, own Redis DB per leg |
 | 5–7 | Per-user limit **shared across legs**, system tokens, header spoofing | `rate-limiting-advanced`, `identifier: credential`, explicit `namespace` |
-| 8–9 | 4 block kinds, propagation time, behaviour when dependencies fail | `services/blocking-service`, `kong-plugins/blocklist`, `opa/policy` |
+| 8–9 | blocks = WHO (user / system / token by `jti` / everyone) × WHERE (one route / all routes): 7 combinations, propagation time, behaviour when dependencies fail | `services/blocking-service`, `kong-plugins/blocklist`, `opa/policy` |
 | 10 | Config change from Git with **zero pod restarts** | `argocd/`, `scripts/check-restarts.sh` |
 | 11–12 | Leg drain, scale-out with full config | `scripts/drain-leg.sh` |
 | 13 | Latency: no blocking vs Lua vs OPA | `tests/load/latency.js` |
@@ -103,7 +103,10 @@ only mirrors it (read-only).
 | Per-user rule after route-wide | per-user plugin runs **first** (Enterprise dynamic ordering) | a noisy caller should not burn the route budget of everybody; toggle `kongRouteDefaults.userLimitFirst` |
 | KIC admission webhook | **off** | chart-generated certificate drifts under ArgoCD; production: cert-manager |
 | Per-leg cluster-scoped names | prefixed with the leg (`leg1-openid-connect`, GatewayClass `kong-leg1`) | both legs share one cluster; in production plain names work |
-| EF Core migrations | `EnsureCreated()` | POC; no migration tooling in the image |
+| EF Core migrations | `EnsureCreated()`; the v1→v2 block schema change renames the old tables to `blocks_v1` / `audit_v1` (kept for audit, **not migrated**) and creates empty v2 tables | POC; no migration tooling in the image. Production: EF Core migrations |
+| 4 block kinds (user, system token, route, user on route) | one model: subject `{type: user \| system \| token \| everyone, id}` + `route` (null = all routes); 7 combinations, everyone on all routes → 400. Gateways look up rule keys `type:id@route` (≤ 5 per request) | user's redesign: adds blocking one leaked token (`jti`) and an application on one route; one consistent API |
+| System token = token whose `caller_id` is a client id | system token = token with the claim `global.auth.systemToken.claim` (POC: `client_id`, only in Keycloak client-credentials tokens), read by the Lua plugin and OPA | a user and an application could otherwise not be told apart by id alone; ADFS claim to be confirmed (OPEN-QUESTIONS) |
+| Konnect mirrors the KIC config | `konnect-setup.sh` also uploads the custom `blocklist` plugin schema | without it Konnect rejected every config upload ("no plugin-schema for 'blocklist'"); gateways unaffected |
 | Images built locally | OpenShift `BuildConfig` from GitHub | the workstation needs no .NET SDK / registry |
 | Swagger write auth via OAuth flow | paste a bearer token (`scripts/get-token.sh opsadmin`) | Keycloak's issuer is pinned to the in-cluster URL (so Kong and workstation tokens agree) |
 | Prometheus ServiceMonitor | metrics exposed, scraped manually | CRC disables cluster monitoring by default (saves ~4 GiB) |

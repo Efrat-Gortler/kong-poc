@@ -6,6 +6,13 @@ Each item: what the POC assumed, and what must be checked.
 - [ ] **Issuer URL format** of ADFS (`https://<adfs>/adfs` vs with a trailing path) — Kong's `issuer` and
       `issuers_allowed` must match the `iss` claim exactly.
 - [ ] **Audience**: what `aud` ADFS puts in tokens for the gateway (relying-party identifier). POC: `api://kong-gateway`.
+- [ ] **Which claim marks a system (client-credentials) token in ADFS** — blocking subject type `system` depends on it
+      (`global.auth.systemToken.claim` / `.values` in `cluster/values-<platform>.yaml`, read by the Lua plugin and OPA).
+      POC: Keycloak puts `client_id` only into client-credentials tokens. ADFS: `appid` is also in user tokens issued
+      to an application, so presence alone may not work; options: a claim rule that adds a marker claim to
+      client-credentials tokens, or a claim value (e.g. an `amr`/`appidacr`-style value) in `.values`.
+- [ ] **Do ADFS access tokens carry a `jti`?** Blocking a single token (subject type `token`) needs a unique id per
+      token. Without `jti`, token blocks are impossible (user/system/everyone blocks still work).
 - [ ] **`upn` format** (`user@domain` vs `DOMAIN\user`), and whether case is stable — blocks and counters are exact-match.
 - [ ] **System tokens**: which claim identifies the application (`appid`, `client_id`, …). POC simulates a
       unified claim `caller_id` (= `upn` for users, client id for system tokens): ask ADFS for this claim rule.
@@ -28,7 +35,9 @@ Each item: what the POC assumed, and what must be checked.
 - [x] `kong.client.get_credential().id` equals the `caller_id` value when openid-connect uses `credential_claim`
       (test 8 "user" passes in Lua mode).
 - [x] Redis key format of `rate-limiting-advanced` contains the namespace in clear text (`<window start>:60:<route>-user`).
-- [ ] `opa run --watch` together with a configured bundle (policy hot-reload) — not verified yet; note `--ignore=.*` is now needed for the ConfigMap volume.
+- [ ] `opa run --watch` together with a configured bundle (policy hot-reload) — not verified yet (the v2 policy rolled out with a pod restart); note `--ignore=.*` is needed for the ConfigMap volume.
+- [x] Local data next to the bundle: OPA loads `/blocking-config/data.json` (`data.blocking_config`) together with the `blocklist` bundle root.
+- [ ] Konnect custom plugin schema: run `scripts/konnect-setup.sh <leg>` (needs `KONNECT_TOKEN`) so the KIC config mirror is accepted again; not verified for KIC-type control planes.
 - [x] Exact Kong Gateway patch tag: `3.14.0.16` runs; `3.14.0.17` is available (upgrade = one line in Git).
 - [x] Konnect KIC hostname for the EU region: `eu.kic.api.konghq.com` works (license + config sync).
 - [x] NuGet package versions for .NET 10: the in-cluster build restores and runs the unit tests (one compile fix: ambiguous `JsonOptions`).
