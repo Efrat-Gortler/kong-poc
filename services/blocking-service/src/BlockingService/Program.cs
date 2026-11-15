@@ -2,15 +2,16 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using BlockingService;
 using BlockingService.Data;
 using BlockingService.Domain;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Http.Json;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
 using Microsoft.OpenApi.Models;
+using ProblemDetails = Microsoft.AspNetCore.Mvc.ProblemDetails;
 
 var builder = WebApplication.CreateBuilder(args);
 var cfg = builder.Configuration;
@@ -26,12 +27,12 @@ var knownRoutes = (cfg.GetSection("Blocking:KnownRoutes").Get<string[]>() ?? [])
 builder.Services.AddDbContext<BlockingDbContext>(o =>
     o.UseNpgsql(cfg.GetConnectionString("Blocking") ?? throw new InvalidOperationException("ConnectionStrings:Blocking is required")));
 
-// minimal APIs read Http.Json.JsonOptions; Mvc.JsonOptions (also imported) is ambiguous with it
-builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(o =>
-{
-    foreach (var c in Names.Json.Converters) o.SerializerOptions.Converters.Add(c);
-    o.SerializerOptions.DefaultIgnoreCondition = Names.Json.DefaultIgnoreCondition;
-});
+// Minimal APIs read Http.Json.JsonOptions; Swashbuckle reads Mvc.JsonOptions - same settings for both
+// (enums as "user" | "system" | "token" | "everyone").
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(o => Names.Configure(o.SerializerOptions));
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(o => Names.Configure(o.JsonSerializerOptions));
+// Malformed JSON / unknown enum values: throw, so the exception handler can answer with a clear 400.
+builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -58,9 +59,20 @@ builder.Services.AddSwaggerGen(o =>
     o.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "Kong POC - Blocking service",
-        Version = "v1",
-        Description = "Block users, system tokens and routes on every leg within seconds. " +
-                      "Write endpoints need a Keycloak token with role 'blocker' (scripts/get-token.sh opsadmin).",
+        Version = "v2",
+        Description = """
+            A block = WHO (`subject`) + WHERE (`route`).
+
+            | subject.type | subject.id | route: a name | route: omitted (all routes) |
+            |---|---|---|---|
+            | `user` | caller_id (upn) | ✔ | ✔ |
+            | `system` | caller_id (client id) | ✔ | ✔ |
+            | `token` | the token's `jti` | ✔ | ✔ |
+            | `everyone` | — | ✔ | ✘ (400: would stop all traffic) |
+
+            Every gateway leg enforces a new block within one poll interval. Write endpoints need a
+            Keycloak token with role `blocker` (`scripts/get-token.sh opsadmin`).
+            """,
     });
     var bearer = new OpenApiSecurityScheme
     {
@@ -72,17 +84,18 @@ builder.Services.AddSwaggerGen(o =>
     o.AddSecurityRequirement(new OpenApiSecurityRequirement { [bearer] = [] });
     var xml = Path.Combine(AppContext.BaseDirectory, "BlockingService.xml");
     if (File.Exists(xml)) o.IncludeXmlComments(xml);
+    o.SchemaFilter<SubjectTypeSchemaFilter>();
+    o.OperationFilter<BlockExamplesOperationFilter>();
 });
 
 var app = builder.Build();
 
-// Schema: EnsureCreated keeps the POC free of migration tooling (see README "Deviations").
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BlockingDbContext>();
     for (var attempt = 1; ; attempt++)
     {
-        try { db.Database.EnsureCreated(); break; }
+        try { await Schema.EnsureCurrentAsync(db, app.Logger); break; }
         catch (Exception ex) when (attempt < 30)
         {
             app.Logger.LogWarning("Database not ready ({Attempt}/30): {Message}", attempt, ex.Message);
@@ -91,7 +104,18 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-app.UseExceptionHandler();
+app.UseExceptionHandler(e => e.Run(async http =>
+{
+    var ex = http.Features.Get<IExceptionHandlerFeature>()?.Error;
+    if (ex is BadHttpRequestException bad)
+    {
+        var (field, message) = RequestErrors.Describe(bad);
+        await TypedResults.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] },
+            title: "The request body is not valid").ExecuteAsync(http);
+        return;
+    }
+    await TypedResults.Problem(title: "Unexpected error", statusCode: StatusCodes.Status500InternalServerError).ExecuteAsync(http);
+}));
 app.UseSwagger();
 app.UseSwaggerUI(o => o.SwaggerEndpoint("/swagger/v1/swagger.json", "v1"));
 app.UseAuthentication();
@@ -111,35 +135,41 @@ api.MapGet("/", async (BlockingDbContext db, bool includeInactive = false) =>
     var now = DateTimeOffset.UtcNow;
     var q = db.Blocks.AsNoTracking();
     if (!includeInactive) q = q.Where(b => b.RemovedAt == null && (b.ExpiresAt == null || b.ExpiresAt > now));
-    return await q.OrderByDescending(b => b.CreatedAt).Select(b => BlockDto.From(b, now)).ToListAsync();
-}).WithSummary("List blocks (active only unless includeInactive=true)");
+    var rows = await q.OrderByDescending(b => b.CreatedAt).ToListAsync();
+    return TypedResults.Ok(rows.Select(b => BlockDto.From(b, now)).ToList());
+}).WithSummary("List blocks (active only unless includeInactive=true); same shape as the POST body plus id, rule and lifecycle");
 
 api.MapPost("/", async Task<Results<Created<BlockDto>, ValidationProblem, Conflict<ProblemDetails>>>
     (CreateBlockRequest req, BlockingDbContext db, ClaimsPrincipal user) =>
 {
     var now = DateTimeOffset.UtcNow;
     var errors = BlockValidator.Validate(req, knownRoutes, now);
-    if (errors.Count > 0) return TypedResults.ValidationProblem(errors);
+    if (errors.Count > 0) return TypedResults.ValidationProblem(errors, title: "The block is not valid");
 
-    var callerId = string.IsNullOrWhiteSpace(req.CallerId) ? null : req.CallerId;
-    var route = string.IsNullOrWhiteSpace(req.Route) ? null : req.Route;
+    var (type, id, route) = BlockValidator.Target(req);
+    var key = RuleKeys.Key(type, id, route);
     var active = await db.Blocks.Where(b => b.RemovedAt == null && (b.ExpiresAt == null || b.ExpiresAt > now)).ToListAsync();
-    var dup = active.FirstOrDefault(b => BlockValidator.SameTarget(b, req.Kind, callerId, route));
+    var dup = active.FirstOrDefault(b => b.RuleKey == key);
     if (dup is not null)
-        return TypedResults.Conflict(new ProblemDetails { Title = "Already blocked", Detail = $"Active block {dup.Id} covers this target." });
+        return TypedResults.Conflict(new ProblemDetails
+        {
+            Title = "Already blocked", Status = StatusCodes.Status409Conflict,
+            Detail = $"Active block {dup.Id} has the same rule {key}.",
+        });
 
     var block = new Block
     {
-        Kind = req.Kind, CallerId = callerId, Route = route, Reason = req.Reason.Trim(),
+        SubjectType = type, SubjectId = id, Route = route, Reason = req.Reason!.Trim(),
         CreatedBy = Actor(user), CreatedAt = now, ExpiresAt = BlockValidator.EffectiveExpiry(req, now),
     };
     db.Blocks.Add(block);
     db.Audit.Add(Audit("created", block, block.CreatedBy, now));
     await db.SaveChangesAsync();
-    app.Logger.LogInformation("Block created {Id} kind={Kind} caller={Caller} route={Route} by={By}",
-        block.Id, Names.Kind(block.Kind), block.CallerId, block.Route, block.CreatedBy);
+    app.Logger.LogInformation("Block created {Id} rule={Rule} by={By}", block.Id, block.RuleKey, block.CreatedBy);
     return TypedResults.Created($"/api/blocks/{block.Id}", BlockDto.From(block, now));
-}).WithSummary("Create a block (takes effect on every leg within one poll interval)");
+}).WithSummary("Create a block: WHO (subject) + WHERE (route). Takes effect on every leg within one poll interval")
+  .WithDescription("Every combination of subject.type and route is valid except everyone on all routes (400). " +
+                   "An active block with the same rule gives 409.");
 
 api.MapDelete("/{id:guid}", async Task<Results<NoContent, NotFound>> (Guid id, BlockingDbContext db, ClaimsPrincipal user) =>
 {
@@ -150,16 +180,16 @@ api.MapDelete("/{id:guid}", async Task<Results<NoContent, NotFound>> (Guid id, B
     block.RemovedBy = Actor(user);
     db.Audit.Add(Audit("removed", block, block.RemovedBy, now));
     await db.SaveChangesAsync();
-    app.Logger.LogInformation("Block removed {Id} by={By}", block.Id, block.RemovedBy);
+    app.Logger.LogInformation("Block removed {Id} rule={Rule} by={By}", block.Id, block.RuleKey, block.RemovedBy);
     return TypedResults.NoContent();
 }).WithSummary("Unblock");
 
 app.MapGet("/api/audit", async (BlockingDbContext db, int take = 100) =>
     await db.Audit.AsNoTracking().OrderByDescending(a => a.Id).Take(Math.Clamp(take, 1, 1000)).ToListAsync())
-    .WithTags("Blocks").RequireAuthorization("blocker").WithSummary("Audit log of every change");
+    .WithTags("Blocks").RequireAuthorization("blocker").WithSummary("Audit log of every change (v2 schema; v1 history is in table audit_v1)");
 
 app.MapGet("/api/routes", () => knownRoutes.Order(StringComparer.Ordinal))
-    .WithTags("Blocks").RequireAuthorization("blocker").WithSummary("Route names that can be blocked");
+    .WithTags("Blocks").RequireAuthorization("blocker").WithSummary("Route names a block can name in 'route'");
 
 // ---------- gateway API (service credential) ----------
 var gw = app.MapGroup("/api").WithTags("Gateways").AddEndpointFilter(async (ctx, next) =>
@@ -173,7 +203,7 @@ gw.MapGet("/blocklist", async (HttpContext http, BlockingDbContext db) =>
     http.Response.Headers.CacheControl = "no-cache";
     if (MatchesEtag(http.Request, etag)) return Results.StatusCode(StatusCodes.Status304NotModified);
     return Results.Json(snapshot, Names.Json);
-}).WithSummary("Active block list for the Lua plugin (supports If-None-Match)");
+}).WithSummary("Active rules for the Lua plugin: { version, rules: { \"type:id@route\": blockId } } (supports If-None-Match)");
 
 gw.MapGet("/opa/bundle.tar.gz", async (HttpContext http, BlockingDbContext db) =>
 {
@@ -182,7 +212,7 @@ gw.MapGet("/opa/bundle.tar.gz", async (HttpContext http, BlockingDbContext db) =
     http.Response.Headers.ETag = etag;
     if (MatchesEtag(http.Request, etag)) return Results.StatusCode(StatusCodes.Status304NotModified);
     return Results.File(OpaBundle.Build(snapshot), "application/gzip", "bundle.tar.gz");
-}).WithSummary("Same list as an OPA bundle (data.blocklist), polled by each leg's OPA");
+}).WithSummary("Same rules as an OPA bundle (data.blocklist.rules), polled by each leg's OPA");
 
 app.Run();
 
@@ -217,14 +247,6 @@ static bool IsReader(HttpRequest req, string key)
     return CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(presented), Encoding.UTF8.GetBytes(key));
 }
 
-public record BlockDto(
-    Guid Id, BlockKind Kind, string? CallerId, string? Route, string Reason, string CreatedBy,
-    DateTimeOffset CreatedAt, DateTimeOffset? ExpiresAt, DateTimeOffset? RemovedAt, string? RemovedBy, bool Active)
-{
-    public static BlockDto From(Block b, DateTimeOffset now) =>
-        new(b.Id, b.Kind, b.CallerId, b.Route, b.Reason, b.CreatedBy, b.CreatedAt, b.ExpiresAt, b.RemovedAt, b.RemovedBy, b.IsActive(now));
-}
-
 /// <summary>Marks expired blocks as removed and audits it. The snapshot already
 /// ignores expired rows, so expiry takes effect even between two runs.</summary>
 public class ExpiryWorker(IServiceScopeFactory scopes, ILogger<ExpiryWorker> log) : BackgroundService
@@ -249,7 +271,7 @@ public class ExpiryWorker(IServiceScopeFactory scopes, ILogger<ExpiryWorker> log
                         At = now, Action = "expired", BlockId = b.Id, Actor = "system:expiry",
                         Details = JsonSerializer.Serialize(BlockDto.From(b, now), Names.Json),
                     });
-                    log.LogInformation("Block expired {Id}", b.Id);
+                    log.LogInformation("Block expired {Id} rule={Rule}", b.Id, b.RuleKey);
                 }
                 if (expired.Count > 0) await db.SaveChangesAsync(stop);
             }
