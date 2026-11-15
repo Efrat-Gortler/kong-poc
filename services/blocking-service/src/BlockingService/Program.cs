@@ -84,6 +84,8 @@ builder.Services.AddSwaggerGen(o =>
     o.AddSecurityRequirement(new OpenApiSecurityRequirement { [bearer] = [] });
     var xml = Path.Combine(AppContext.BaseDirectory, "BlockingService.xml");
     if (File.Exists(xml)) o.IncludeXmlComments(xml);
+    // properties that reference a schema (subject, subject.type) keep their own description/example
+    o.UseAllOfToExtendReferenceSchemas();
     o.SchemaFilter<SubjectTypeSchemaFilter>();
     o.OperationFilter<BlockExamplesOperationFilter>();
 });

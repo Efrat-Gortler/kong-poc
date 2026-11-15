@@ -11,6 +11,8 @@ and runs this file twice). Results go to tests/results/.
 Target and control requests use /orders-perf (route orders-perf: same plugin chain as /orders,
 limits high enough that polling every 0.25 s on both legs never meets a rate limit).
 """
+from __future__ import annotations
+
 import time
 from dataclasses import dataclass, field
 
