@@ -37,7 +37,7 @@ blocking:
   # opa          -> Kong opa plugin enforces (needs the opa chart in this leg)
   # both-observe -> opa enforces, Lua only logs/marks what it WOULD block
   # off          -> no blocking plugin
-  mode: lua
+  mode: opa
   serviceUrl: http://blocking-service.blocking.svc.cluster.local:8080/api/blocklist
   readerSecret: blocklist-reader      # Secret in this leg's namespace, key: api-key
   pollIntervalSeconds: 5
