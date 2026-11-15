@@ -1,5 +1,6 @@
--- blocklist: rejects requests whose caller / route / caller-on-route is in the
--- blocking service's list.
+-- blocklist: rejects requests that match a rule of the blocking service's list.
+-- A rule = WHO (user | system | token | everyone) + WHERE (one route or all routes),
+-- keyed "type:id@route" (see matcher.lua); at most 5 table lookups per request.
 --
 -- * No network call in the request path. A background timer polls the blocking
 --   service every `poll_interval` seconds (ETag / If-None-Match, so unchanged
@@ -29,7 +30,7 @@ local KEY_LOCK        = "poll_lock"
 
 local Blocklist = {
   PRIORITY = 1000,
-  VERSION  = "0.1.0",
+  VERSION  = "0.2.0",
 }
 
 -- per-worker state
@@ -159,23 +160,29 @@ function Blocklist:access(conf)
     return kong.response.exit(503, { message = "Service unavailable" })
   end
 
-  local credential = kong.client.get_credential()
-  local caller_id  = credential and credential.id or nil
-  local route_name = matcher.route_name(kong.router.get_route())
+  -- caller_id: the credential openid-connect authenticated (credential_claim). Type and jti come
+  -- from the same, already verified, bearer token (decoded only, not re-verified).
+  local credential  = kong.client.get_credential()
+  local caller_id   = credential and credential.id or nil
+  local claims      = matcher.jwt_claims(kong.request.get_header("authorization"))
+  local caller_type = matcher.caller_type(claims, conf.system_claim, conf.system_claim_values)
+  local jti         = claims and type(claims.jti) == "string" and claims.jti ~= "" and claims.jti or nil
+  local route_name  = matcher.route_name(kong.router.get_route())
 
-  local kind = matcher.check(idx, caller_id, route_name)
-  if not kind then
+  local hit = matcher.check(idx, caller_type, caller_id, jti, route_name)
+  if not hit then
     return
   end
 
-  -- reason stays in the logs only; the client gets a generic body
+  -- reason stays in the blocking service; logs carry the rule and block id, the client a generic body
   kong.log.notice("[blocklist] ", conf.observe_only and "would block" or "blocked",
-                  " kind=", kind, " caller_id=", caller_id or "-", " route=", route_name or "-",
+                  " rule=", hit.key, " block=", hit.block_id or "-", " caller_type=", caller_type,
+                  " caller_id=", caller_id or "-", " jti=", jti or "-", " route=", route_name or "-",
                   " leg=", conf.leg or "-", " list_version=", idx.version)
-  kong.ctx.shared.blocklist_kind = kind
+  kong.ctx.shared.blocklist_kind = hit.kind
 
   if conf.observe_only then
-    kong.ctx.plugin.would_block = kind
+    kong.ctx.plugin.would_block = hit.kind
     return
   end
   return kong.response.exit(conf.status_code, { message = "Forbidden" })

@@ -31,11 +31,27 @@ package.loaded["resty.http"] = {
 }
 
 local exited, logged, resp_headers
-local credential, route
+local credential, route, authorization
+
+-- unsigned test JWT (the plugin only decodes; openid-connect verified the real token)
+local function b64url(str)
+  local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+  local out = {}
+  for i = 1, #str, 3 do
+    local a, b, c = str:byte(i, i + 2)
+    local n = a * 65536 + (b or 0) * 256 + (c or 0)
+    local q = { math.floor(n / 262144) % 64, math.floor(n / 4096) % 64, math.floor(n / 64) % 64, n % 64 }
+    for j = 1, (c and 4 or b and 3 or 2) do out[#out + 1] = chars:sub(q[j] + 1, q[j] + 1) end
+  end
+  return table.concat(out)
+end
+local function bearer(claims)
+  return "Bearer " .. b64url('{"alg":"RS256"}') .. "." .. b64url(cjson.encode(claims)) .. ".sig"
+end
 
 local function reset_env()
   exited, logged, resp_headers = nil, {}, {}
-  credential, route = nil, nil
+  credential, route, authorization = nil, nil, nil
   _G.ngx = {
     shared = { blocklist = new_dict() },
     worker = { pid = function() return 1 end },
@@ -47,6 +63,7 @@ local function reset_env()
       return function(...) table.insert(logged, { lvl = lvl, msg = table.concat({ ... }) }) end
     end }),
     client = { get_credential = function() return credential end },
+    request = { get_header = function(name) if name:lower() == "authorization" then return authorization end end },
     router = { get_route = function() return route end },
     response = {
       exit = function(status, body) exited = { status = status, body = body }; return exited end,
@@ -61,6 +78,7 @@ end
 local base_conf = {
   service_url = "http://blocking/api/blocklist", api_key = "k", poll_interval = 5,
   timeout_ms = 1000, fail_open = false, observe_only = false, status_code = 403, leg = "leg1",
+  system_claim = "client_id", system_claim_values = {},
 }
 
 local function conf(over)
@@ -71,8 +89,13 @@ local function conf(over)
 end
 
 local snapshot = {
-  version = "v1", users = { "666efratg@corp.local" }, system_tokens = {}, routes = { "orders-export" },
-  user_on_route = {},
+  version = "v1",
+  rules = {
+    ["user:666efratg@corp.local@*"] = "b1",
+    ["system:reports-service@*"]    = "b2",
+    ["token:leaked-jti@*"]          = "b3",
+    ["everyone:*@orders-export"]    = "b4",
+  },
 }
 
 -- Run one poll through the real code path (configure -> timer loop -> poll_once).
@@ -115,11 +138,60 @@ describe("blocklist handler", function()
     assert.equal("k", last_request.opts.headers["X-Api-Key"])
 
     credential = { id = "666efratg@corp.local" }
+    authorization = bearer({ caller_id = "666efratg@corp.local", jti = "j1" })
     route = { name = "httproute.leg1.orders.0.0", tags = { "k8s-name:orders" } }
     h:access(conf())
     assert.equal(403, exited.status)
     assert.same({ message = "Forbidden" }, exited.body)
-    assert.equal("user", kong.ctx.shared.blocklist_kind)
+    assert.equal("user@*", kong.ctx.shared.blocklist_kind)
+    assert.matches("rule=user:666efratg@corp.local@* block=b1", logged[#logged].msg, 1, true)
+  end)
+
+  it("blocks a system token, recognised by the configured claim", function()
+    local h = reset_env()
+    http_response = { status = 200, body = cjson.encode(snapshot), headers = {} }
+    poll(h, conf())
+    credential = { id = "reports-service" }
+    route = { tags = { "k8s-name:users" } }
+    authorization = bearer({ caller_id = "reports-service", client_id = "reports-service", jti = "j2" })
+    h:access(conf())
+    assert.equal(403, exited.status)
+    assert.equal("system@*", kong.ctx.shared.blocklist_kind)
+
+    -- same caller_id without the system claim = a user: the system rule does not apply
+    exited = nil
+    authorization = bearer({ caller_id = "reports-service", jti = "j3" })
+    h:access(conf())
+    assert.is_nil(exited)
+
+    -- another claim configured: client_id alone no longer makes it a system token
+    exited = nil
+    authorization = bearer({ caller_id = "reports-service", client_id = "reports-service", jti = "j4" })
+    h:access(conf({ system_claim = "appid" }))
+    assert.is_nil(exited)
+  end)
+
+  it("blocks one token by its jti, even without a caller_id", function()
+    local h = reset_env()
+    http_response = { status = 200, body = cjson.encode(snapshot), headers = {} }
+    poll(h, conf())
+    route = { tags = { "k8s-name:orders" } }
+    authorization = bearer({ jti = "leaked-jti" })
+    h:access(conf())
+    assert.equal(403, exited.status)
+    assert.equal("token@*", kong.ctx.shared.blocklist_kind)
+  end)
+
+  it("blocks everyone on a route", function()
+    local h = reset_env()
+    http_response = { status = 200, body = cjson.encode(snapshot), headers = {} }
+    poll(h, conf())
+    credential = { id = "normaluser@corp.local" }
+    authorization = bearer({ caller_id = "normaluser@corp.local", jti = "j5" })
+    route = { tags = { "k8s-name:orders-export" } }
+    h:access(conf())
+    assert.equal(403, exited.status)
+    assert.equal("everyone@route", kong.ctx.shared.blocklist_kind)
   end)
 
   it("lets other callers through", function()
@@ -169,7 +241,7 @@ describe("blocklist handler", function()
     h:access(c)
     assert.is_nil(exited)
     h:header_filter(c)
-    assert.equal("user", resp_headers["X-Blocklist-Would-Block"])
+    assert.equal("user@*", resp_headers["X-Blocklist-Would-Block"])
   end)
 
   it("only one worker polls per interval (shared lock)", function()

@@ -20,6 +20,12 @@ return {
           -- Log + mark (X-Blocklist-Would-Block) instead of rejecting. Used by blocking.mode=both-observe.
           { observe_only = { type = "boolean", default = false } },
           { status_code = { type = "integer", default = 403, between = { 400, 599 } } },
+          -- Which tokens are SYSTEM tokens (subject type "system"); every other token is a user.
+          -- A token is a system token when it carries this claim and, if system_claim_values is
+          -- not empty, the claim's value is one of them. POC (Keycloak): client_id, present only in
+          -- client-credentials tokens. Production (ADFS): see docs/OPEN-QUESTIONS.md.
+          { system_claim = { type = "string", required = true, default = "client_id" } },
+          { system_claim_values = { type = "array", elements = { type = "string" }, default = {} } },
           -- Free text, only for log lines.
           { leg = { type = "string" } },
         },
