@@ -50,6 +50,18 @@ else
   log "uploaded client certificate and created Secret $leg/konnect-client-tls"
 fi
 
+# Custom plugin schema: without it Konnect rejects KIC's config mirror ("no plugin-schema for
+# 'blocklist'"); the gateways are not affected. Re-run after changing kong-plugins/blocklist/.../schema.lua.
+schema_file="$REPO_ROOT/kong-plugins/blocklist/kong/plugins/blocklist/schema.lua"
+schema_body="$(jq -n --rawfile s "$schema_file" '{lua_schema: $s}')"
+if kapi GET "/v2/control-planes/${cp_id}/core-entities/plugin-schemas/blocklist" >/dev/null 2>&1; then
+  kapi PUT "/v2/control-planes/${cp_id}/core-entities/plugin-schemas/blocklist" "$schema_body" >/dev/null \
+    && log "updated the blocklist plugin schema in $CP_NAME" || warn "could not update the blocklist plugin schema in $CP_NAME"
+else
+  kapi POST "/v2/control-planes/${cp_id}/core-entities/plugin-schemas" "$schema_body" >/dev/null \
+    && log "uploaded the blocklist plugin schema to $CP_NAME" || warn "could not upload the blocklist plugin schema to $CP_NAME"
+fi
+
 # KIC's Konnect host for the EU region. Check it answers before relying on it.
 kic_host="$(grep -E '^\s*apiHostname:' "$REPO_ROOT/charts/kong-values/values.yaml" | head -1 | sed -E 's/.*"(.*)".*/\1/')"
 code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${kic_host}/" || true)"
