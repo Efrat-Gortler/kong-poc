@@ -1,6 +1,6 @@
 # Option A — Kong Manager, self-hosted (design)
 
-Status: **design, not built yet** (2026-11-17). Built next to option C in the same cluster; option C
+Status: **B0–B2 built** (namespaces, Secrets, Postgres, control plane) and free mode verified on 3.14 (2026-11-17). Built next to option C in the same cluster; option C
 (`leg1`, `leg2`, `kong-global`, blocking service, OPA and their Argo CD apps) is not touched.
 
 ## Goal
@@ -21,22 +21,44 @@ licensed parts ready (see "Free mode vs licensed").
 | Can the Konnect trial license be used by a self-hosted control plane? | **No.** Konnect provisions licenses to the organisation for Konnect-connected gateways; Kong states the Konnect license key cannot be accessed or retrieved directly. KIC's license agent fetches it for Konnect-linked gateways only (option C). Using it elsewhere is not intended by the trial terms. |
 | What is needed instead | A license JSON for self-managed Kong Gateway Enterprise: a trial from Kong (sales / support portal, "license.json"), or the organisation's existing license. |
 | How it will be applied | `POST /licenses` on the control plane's Admin API (payload read from an OpenShift Secret by a script, never printed). The control plane then **sends the license to every data plane** — the only method that reaches data planes automatically. (`KONG_LICENSE_DATA` / `license.json` would have to be on every node before it starts.) |
-| Free mode in 3.14 | Free mode was **deprecated in 3.10** ("will be removed in a future 3.x version; running without a license will then behave like an expired license"). With an expired license the Admin API and Kong Manager are **read-only** (documented for 3.15+). Whether 3.14.0.x still runs a *writable* free mode is **not stated in the docs** → it is the first thing the build verifies (step B1). Fallback if 3.14 is read-only without a license: the same design on the 3.10 LTS Enterprise image (free mode still present), recorded as a deviation. |
+| Free mode in 3.14 | **Verified on the running control plane (3.14.0.16, no license): the Admin API is writable** — see "Free mode, verified" below. Background: free mode was **deprecated in 3.10** ("will be removed in a future 3.x version; running without a license will then behave like an expired license"). With an expired license the Admin API and Kong Manager are **read-only** (documented for 3.15+). Whether 3.14.0.x still runs a *writable* free mode is **not stated in the docs** → it is the first thing the build verifies (step B1). Fallback if 3.14 is read-only without a license: the same design on the 3.10 LTS Enterprise image (free mode still present), recorded as a deviation. |
+
+### Free mode, verified (3.14.0.16, no license, 2026-11-17)
+
+Admin API of the control plane (`GET /` → `edition: enterprise`, `license: none`, `/licenses` empty):
+
+| Request | Result |
+|---|---|
+| `POST /services`, `POST /services/{s}/routes` | 201 |
+| `rate-limiting` on a route, `policy: redis`, `database: 4` | 201 |
+| `rate-limiting` with `redis.host: {vault://env/kong-route-rl-redis-host}` | 201 (accepted; resolution on the data planes is verified in B4) |
+| `PATCH /plugins/{id}` (edit) | 200 |
+| `request-termination` on a route | 201 |
+| `jwt` (`claims_to_verify: [exp]`, `key_claim_name: iss`) | 201 |
+| `request-termination` with `ordering.before.access: [rate-limiting]` | **400 `ordering requires a license to be used`** |
+| `openid-connect`, `rate-limiting-advanced` | **400 `'…' is an enterprise only plugin`** |
+| Kong Manager (port 8002) | 200, served |
+
+So the 3.10 LTS fallback is not needed. Consequence of "no dynamic ordering" in free mode: `request-termination`
+(priority 2) runs **after** `rate-limiting` (910), so requests to a blocked route still count against that route's
+limit. For everyone-on-route blocks this is harmless (the route is closed); for the licensed Consumer blocks the
+ordering is set once the license is applied.
 
 ### Free mode vs licensed
 
 | Capability | Free mode (now) | Licensed (later) |
 |---|---|---|
-| Kong Manager: create/edit services, routes, plugins, consumers | ✔ (to verify on 3.14) | ✔ |
+| Kong Manager: create/edit services, routes, plugins, consumers | ✔ (verified) | ✔ |
 | Kong Manager **login, RBAC**, workspaces | ✘ — **no login: anyone who reaches the Route is admin** | ✔ basic-auth (POC) → OIDC to the IdP |
 | Audit log (who changed what) | ✘ | ✔ `audit_log = on` |
+| Dynamic plugin ordering | ✘ (400 `ordering requires a license`) | ✔ |
 | JWT validation | `jwt` plugin (OSS): signature (RS256, IdP public key on a Consumer named after the issuer) + `exp`. **No `aud` check, no JWKS rotation, no per-user identity** | `openid-connect`: JWKS, `iss`/`aud`/`exp`, `credential_claim: caller_id`, consumer mapping |
 | Route-wide limit per leg | `rate-limiting` (OSS), `policy: redis`, per-leg Redis (section 3) | same |
 | Per-user limit across legs | ✘ (the jwt plugin's consumer is the issuer, not the user) | `rate-limiting-advanced`, `identifier: credential`, Redis DB 3 in `gw-shared` |
-| Block everyone on route Y | ✔ `request-termination` on the route | ✔ |
+| Block everyone on route Y | ✔ `request-termination` on the route (runs after rate limiting: no dynamic ordering) | ✔, ordered before rate limiting |
 | Block user / system on all routes or route Y | ✘ (no per-user consumer) | ✔ Consumer per caller + `request-termination` (section 5) |
 | Block one token (`jti`) | ✘ | custom plugin (section 5) |
-| Secrets in plugin config (`{vault://env/...}`) | to verify (env vault) | ✔ |
+| Secrets in plugin config (`{vault://env/...}`) | ✔ accepted by the CP (DP resolution: B4) | ✔ |
 | decK dump (backup) | ✔ | ✔ |
 
 Added once the license arrives (in this order): apply the license (`/licenses`) → `enforce_rbac`,
@@ -166,9 +188,9 @@ through the GSLB until they enforce it), for routes, rate limits and `request-te
 
 | Step | What | Cluster-wide / needs admin |
 |---|---|---|
-| ⏸ B0 | Create namespaces `konga-cp`, `konga-leg1`, `konga-leg2`, `konga-gslb` and the AppProject `kong-poc-a` | yes (namespaces, AppProject) |
-| B1 | Secrets (`scripts/option-a/create-secrets.sh`): Postgres password, cluster cert | no |
-| B2 | Postgres + control plane through Argo CD. **Verify free mode on 3.14**: `POST /services` on the Admin API succeeds. If read-only → stop and report (fallback 3.10 LTS) | no |
+| ✔ B0 | Create namespaces `konga-cp`, `konga-leg1`, `konga-leg2`, `konga-gslb` and the AppProject `kong-poc-a` | yes (namespaces, AppProject) |
+| ✔ B1 | Secrets (`scripts/option-a/create-secrets.sh`): Postgres password, cluster cert | no |
+| ✔ B2 | Postgres + control plane through Argo CD (Kong Enterprise also needs `cluster_telemetry_listen` on a CP). **Verify free mode on 3.14**: `POST /services` on the Admin API succeeds. If read-only → stop and report (fallback 3.10 LTS) | no |
 | B3 | Routes for Kong Manager and Admin API; open Kong Manager from Windows (hosts entries below) | no |
 | B4 | Data planes + per-leg Redis + backends in `konga-leg1/2`; check both DPs connected (`/clustering/data-planes`) | no |
 | B5 | GSLB simulator for the A legs in `konga-gslb` + Route | no |
