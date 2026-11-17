@@ -1,0 +1,6 @@
+apiVersion: v2
+name: konga-postgres
+description: Option A - Postgres for the Kong control plane (Kong Manager / Admin API configuration store)
+type: application
+version: 0.1.0
+appVersion: "16.6"

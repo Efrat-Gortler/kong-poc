@@ -1,0 +1,21 @@
+# Option A (Kong Manager, hybrid mode): own project, own namespaces (konga-*). Option C's project
+# kong-poc is untouched. Infrastructure only - services/routes/plugins live in Kong Manager (Postgres).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: kong-poc-a
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: Kong POC option A - Kong Manager, hybrid mode (control plane + data planes)
+  sourceRepos:
+    - https://github.com/Efrat-Gortler/kong-poc.git
+    - https://charts.konghq.com
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: konga-cp }
+    - { server: https://kubernetes.default.svc, namespace: konga-leg1 }
+    - { server: https://kubernetes.default.svc, namespace: konga-leg2 }
+    - { server: https://kubernetes.default.svc, namespace: konga-gslb }
+  # namespaced resources only; namespaces themselves come from scripts/option-a/bootstrap.sh
+  clusterResourceWhitelist: []

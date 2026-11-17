@@ -1,0 +1,10 @@
+global:
+  platform: openshift
+
+image: docker.io/library/postgres:16.6
+database: kong
+secret: konga-postgres          # keys: username, password (scripts/option-a/bootstrap.sh)
+storage: 2Gi
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits: { memory: 512Mi }
