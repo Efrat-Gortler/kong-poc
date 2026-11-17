@@ -1,3 +1,0 @@
-# OpenShift assigns UIDs through the SCC (restricted-v2); the chart's fixed runAsUser 1000 would be rejected.
-containerSecurityContext:
-  enabled: false
